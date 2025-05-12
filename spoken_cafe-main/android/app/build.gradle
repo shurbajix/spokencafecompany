@@ -1,0 +1,199 @@
+
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
+    id 'com.google.firebase.crashlytics'
+    id "org.jetbrains.kotlin.android"
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
+
+android {
+    namespace "com.example.spokencafe"
+    compileSdkVersion 35
+    ndkVersion "28.0.12674087"
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true // ✅ Required
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "com.example.spokencafe"
+        minSdkVersion 24
+        targetSdkVersion 35
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('/Users/sohaub/upload-keystore.jks')
+            storePassword 'SHOAib12'
+            keyAlias 'upload'
+            keyPassword 'SHOAib12'
+        }
+    }
+
+    buildTypes {
+        debug {
+            manifestPlaceholders = [crashlyticsCollectionEnabled: "false"]
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            manifestPlaceholders = [crashlyticsCollectionEnabled: "true"]
+        }
+    }
+}
+
+dependencies {
+    // ✅ Firebase & Stripe
+    implementation platform('com.google.firebase:firebase-bom:32.7.0')
+    implementation 'com.google.firebase:firebase-crashlytics'
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.firebase:firebase-firestore'
+    implementation 'com.stripe:stripe-android:20.35.1'
+    
+
+    // ✅ Required for Flutter & MultiDex
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'com.google.android.gms:play-services-measurement:22.4.0'
+
+    // ✅ FIXED: Core library desugaring dependency
+     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+     
+    implementation 'com.google.firebase:firebase-storage'
+}
+
+// plugins {
+//     id "com.android.application"
+//     id "kotlin-android"
+//     id "dev.flutter.flutter-gradle-plugin"
+//     id "com.google.gms.google-services"
+//     id 'com.google.firebase.crashlytics'
+//     id "org.jetbrains.kotlin.android"
+// }
+
+// def localProperties = new Properties()
+// def localPropertiesFile = rootProject.file('local.properties')
+// if (localPropertiesFile.exists()) {
+//     localPropertiesFile.withReader('UTF-8') { reader ->
+//         localProperties.load(reader)
+//     }
+// }
+
+// def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+// def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
+
+// android {
+//     namespace "com.example.spokencafe"
+//     compileSdkVersion 35
+//     ndkVersion "28.0.12674087"
+
+//     compileOptions {
+//         sourceCompatibility JavaVersion.VERSION_17
+//         targetCompatibility JavaVersion.VERSION_17
+//         coreLibraryDesugaringEnabled true
+//     }
+
+//     kotlinOptions {
+//         jvmTarget = '17'
+//     }
+
+//     sourceSets {
+//         main.java.srcDirs += 'src/main/kotlin'
+//     }
+
+//     defaultConfig {
+//         applicationId "com.example.spokencafe"
+//         minSdkVersion 24
+//         targetSdkVersion 35
+//         versionCode flutterVersionCode.toInteger()
+//         versionName flutterVersionName
+//         multiDexEnabled true
+        
+//         // Add this for Google Sign-In
+//         manifestPlaceholders = [
+//             'appAuthRedirectScheme': 'com.example.spokencafe'
+//         ]
+//     }
+
+//     signingConfigs {
+//         release {
+//             storeFile file('/Users/sohaub/upload-keystore.jks')
+//             storePassword 'SHOAib12'
+//             keyAlias 'upload'
+//             keyPassword 'SHOAib12'
+//         }
+//     }
+
+//     buildTypes {
+//         debug {
+//             manifestPlaceholders = [
+//                 crashlyticsCollectionEnabled: "false",
+//                 'appAuthRedirectScheme': 'com.example.spokencafe.debug' // Optional for debug
+//             ]
+//         }
+//         release {
+//             signingConfig signingConfigs.release
+//             minifyEnabled true
+//             shrinkResources true
+//             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+//             manifestPlaceholders = [
+//                 crashlyticsCollectionEnabled: "true",
+//                 'appAuthRedirectScheme': 'com.example.spokencafe'
+//             ]
+//         }
+//     }
+// }
+
+// dependencies {
+//     // Firebase BoM (Bill of Materials)
+//     implementation platform('com.google.firebase:firebase-bom:32.7.0')
+    
+//     // Firebase dependencies
+//     implementation 'com.google.firebase:firebase-crashlytics-ktx'
+//     implementation 'com.google.firebase:firebase-analytics-ktx'
+//     implementation 'com.google.firebase:firebase-auth-ktx'
+//     implementation 'com.google.firebase:firebase-firestore-ktx'
+    
+//     // Google Play services for Auth
+//     implementation 'com.google.android.gms:play-services-auth:20.7.0'
+    
+//     // Stripe
+//     implementation 'com.stripe:stripe-android:20.35.1'
+    
+//     // MultiDex
+//     implementation 'androidx.multidex:multidex:2.0.1'
+    
+//     // Core library desugaring
+//     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+    
+//     // Flutter engine
+//     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+// }

@@ -1,0 +1,2 @@
+const String stripPublishKey = "pk_test_51RLTAWQTDRu4l9W2jPPy8aB3zaIEH9mWpQnBm9cwbatAo7bPyRH7FVX3E7oeCBvMYl8XRIDPEXE7ywKEiDHlXaa6003jdcHBWO";
+const String stripSecritKey = "sk_test_51RLTAWQTDRu4l9W2x0TXBgayKVUCgPbX8lNawNYmDv0v7d8mOX4J38oZqnVKjAvmGf0JCe7mYsLgO7y0aPYjC3L700xun9NSD8";

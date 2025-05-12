@@ -1,0 +1,37 @@
+
+// {
+//   "compilerOptions": {
+//     "module": "commonjs",             // Use 'commonjs' for Firebase Cloud Functions
+//     "esModuleInterop": true,
+//     "moduleResolution": "node",       // 'node' is more appropriate for Firebase
+//     "noImplicitReturns": true,
+//     "noUnusedLocals": true,
+//     "outDir": "lib",                  // Output the compiled files to the lib folder
+//     "sourceMap": true,
+//     "strict": true,
+//     "target": "es2017",               // Use modern JS features (ES2017)
+//     "rootDir": "src"                  // Ensure TypeScript treats 'src' as the source folder
+//   },
+//   "include": [
+//     "src/**/*.ts"                     // Ensure all .ts files inside 'src' are included
+//   ],
+//   "exclude": [
+//     "node_modules"                    // Exclude node_modules to avoid unnecessary compilation
+//   ]
+// }
+
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "lib",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}

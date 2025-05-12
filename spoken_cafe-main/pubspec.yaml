@@ -1,0 +1,187 @@
+name: spokencafe
+description: "A new Flutter project."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.4 <4.0.0"
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.6
+  flutter_riverpod: ^2.5.1
+  flutter_rating_bar: ^4.0.1
+  searchable_listview: ^2.12.0
+  blurrycontainer: ^2.1.0
+  image_picker: ^1.1.1
+  video_player: ^2.9.5
+  flutter_staggered_grid_view: ^0.7.0
+  flutter_credit_card: ^4.0.1
+  shared_preferences: ^2.3.1
+  another_carousel_pro: ^1.0.2
+  #file_picker: ^8.0.6
+  font_awesome_flutter: ^10.7.0
+  modal_bottom_sheet: ^3.0.0
+  intl:
+  file_picker: ^10.0.0
+  go_router: ^15.1.1
+  flutter_inappwebview: ^6.1.5
+  geolocator: ^14.0.0
+  rounded_background_text: ^0.6.0
+  iban: ^1.1.0
+  #device_info_plus: ^11.1.1
+  # dio to help http work with my google map
+  dio: ^5.8.0+1
+  google_sign_in: ^6.2.2
+  google_sign_in_ios:
+  rating_summary: ^1.0.3+1
+  flutter_stripe: ^11.0.0
+  # add new stripe for ios
+  stripe_ios:
+  awesome_dialog: ^3.2.1
+# geocoding plugin for map and else
+  geocoding: ^3.0.0
+  location: ^8.0.0
+  flutter_svg: ^2.0.16
+  uuid: ^4.5.1
+  # flutter_google_maps_webservices: ^1.1.1
+  share_plus: ^11.0.0
+  flutter_dotenv: ^5.2.1
+  # add new plugin for test
+  custom_refresh_indicator: ^4.0.1
+  # here i will add the flutter map to make flutter map work perfect 
+  # this for appcheck firebase
+  firebase_app_check: ^0.3.2+5
+  # this start here to add mapbox and remove google map step by step
+  #mapbox_gl: ^0.16.0
+  
+  
+  firebase_core: ^3.12.1
+  cloud_firestore: ^5.6.5
+  firebase_auth: ^5.5.1
+  firebase_storage: ^12.4.4
+  path: ^1.9.1
+  firebase_messaging: ^15.2.5
+  firebase_database: ^11.3.4
+  flutter_local_notifications: ^19.0.0
+  # here will add new bakgaes that for aws amazon package
+  firebase_crashlytics: ^4.3.5
+  # here will add mime plugin
+  mime: ^2.0.0
+  # here i will add firebase analytics
+  firebase_analytics: ^11.4.5
+  # here will add url luncher 
+  url_launcher: ^6.3.1
+  #i will use  latlong2 for latlaong free version and unlimted
+  latlng: ^2.0.7  
+  # this for google map let's try it 
+  google_maps_flutter: ^2.12.1
+  # for payloint the flutter
+  flutter_polyline_points: ^2.1.0
+  # for walking location
+  vector_math:
+  # this for refresh the lodaing image fast 
+  cached_network_image: ^3.4.1
+  # mapbox navigation step by step
+  #flutter_mapbox_navigation:
+  #mapbox mapbox_gl
+  #mapbox_gl:
+  #mapbox search 
+  #mapbox_search: ^4.3.1
+  # general mapbox for map
+  #mapbox_maps_flutter:
+  # flutter_typeahead 
+  flutter_typeahead: ^5.2.0
+  # this will change the image icon inside flutter app when run 
+  flutter_launcher_icons:
+  # spalsh screen native plugin for splash move
+  flutter_native_splash:
+  latlong2: ^0.9.1
+  # stripe payemnt to edit and make it work 
+  stripe_sdk: ^5.0.0
+  
+  flutter_lints: ^5.0.0
+  
+  
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: 'assets/spoken_cafe.png'
+
+flutter_native_splash:
+    color: "FFFFFF"
+    image: assets/spoken_cafe.png
+
+
+  
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/Theme/dark_Theme.json
+    - assets/Theme/reotur_Theme.json
+    - assets/Theme/Sliver_Theme.json
+    - .env
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/assets-and-images/#resolution-aware
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/assets-and-images/#from-packages
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/custom-fonts/#from-packages

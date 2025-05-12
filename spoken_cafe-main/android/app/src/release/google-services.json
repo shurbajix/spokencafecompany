@@ -1,0 +1,83 @@
+{
+  "project_info": {
+    "project_number": "488372966900",
+    "firebase_url": "https://spoken-cafe-456813-b3e6d-default-rtdb.firebaseio.com",
+    "project_id": "spoken-cafe-456813-b3e6d",
+    "storage_bucket": "spoken-cafe-456813-b3e6d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:488372966900:android:1c9f3e71e1302a5eabd5a1",
+        "android_client_info": {
+          "package_name": "com.example.spokencafe"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "488372966900-ti17juadliha1111ppbbr1ngnin3unik.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXY_nKvO6CuHS-6KOj6bM1Vf4yRRsLxPg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "488372966900-6o2e060rh8ei9gb7i8iar5dj1qler2rt.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "488372966900-jjpvq174ltv16mu0e5lnpb3f3pu6k3dl.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "your.bundle.id"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:488372966900:android:76f51109acac64d0abd5a1",
+        "android_client_info": {
+          "package_name": "your.application.id"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "488372966900-ti17juadliha1111ppbbr1ngnin3unik.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXY_nKvO6CuHS-6KOj6bM1Vf4yRRsLxPg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "488372966900-6o2e060rh8ei9gb7i8iar5dj1qler2rt.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "488372966900-jjpvq174ltv16mu0e5lnpb3f3pu6k3dl.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "your.bundle.id"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

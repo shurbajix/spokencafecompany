@@ -1,0 +1,2 @@
+/Users/sohaub/Downloads/projects/spokencafe-1/Front_End/android/app/.cxx/Debug/6j4xop6h/x86/CMakeFiles/edit_cache.dir
+/Users/sohaub/Downloads/projects/spokencafe-1/Front_End/android/app/.cxx/Debug/6j4xop6h/x86/CMakeFiles/rebuild_cache.dir

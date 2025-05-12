@@ -1,0 +1,2 @@
+/Users/sohaub/Downloads/projects/spokencafe-1/Front_End/android/app/.cxx/RelWithDebInfo/v4h5g3d3/arm64-v8a/CMakeFiles/edit_cache.dir
+/Users/sohaub/Downloads/projects/spokencafe-1/Front_End/android/app/.cxx/RelWithDebInfo/v4h5g3d3/arm64-v8a/CMakeFiles/rebuild_cache.dir

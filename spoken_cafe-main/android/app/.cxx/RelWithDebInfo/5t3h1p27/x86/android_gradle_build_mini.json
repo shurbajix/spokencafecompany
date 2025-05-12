@@ -1,0 +1,20 @@
+{
+  "buildFiles": [
+    "/Users/sohaub/development/flutter/packages/flutter_tools/gradle/src/main/groovy/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/sohaub/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/sohaub/Downloads/projects/spokencafe-1/Front_End/android/app/.cxx/RelWithDebInfo/5t3h1p27/x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/sohaub/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/sohaub/Downloads/projects/spokencafe-1/Front_End/android/app/.cxx/RelWithDebInfo/5t3h1p27/x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {}
+}
