@@ -636,6 +636,7 @@ class _SearchState extends ConsumerState<Search> {
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         shadowColor: Colors.transparent,
         backgroundColor: Colors.transparent,
         title: const Text(
