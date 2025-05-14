@@ -358,9 +358,11 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         centerTitle: true,
+        
         backgroundColor: Colors.white,
         automaticallyImplyLeading: false,
         title: Row(
+          //crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: List.generate(
             waycoffes.length,
@@ -381,13 +383,15 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                     color: selectedIndex == index ? const Color(0xff1B1212) : Colors.transparent,
                     border: Border.all(width: 1, color: const Color(0xff1B1212)),
                   ),
-                  child: Text(
+                  child: Column(
+                    children: [Text(
                     '${waycoffes[index]}KM',
                     style: TextStyle(
                       fontSize: 25,
                       color: selectedIndex == index ? Colors.white : const Color(0xff1B1212),
                       fontWeight: FontWeight.bold,
                     ),
+                  ),],
                   ),
                 ),
               );

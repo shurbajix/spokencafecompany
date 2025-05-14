@@ -1,9 +1,10 @@
 import 'dart:async';
-
+import 'dart:io' show Platform;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:spoken_cafe_controller/SidBar/SideBar.dart';
+import 'package:spoken_cafe_controller/model/Screen/Home/Home.dart';
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -29,12 +30,20 @@ class _LoginState extends State<Login> {
     // Check if user is already logged in
     _authStateSubscription = _auth.authStateChanges().listen((User? user) {
       if (user != null && mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => Sidebar()),
-        );
+        _navigateToMainScreen();
       }
     });
+  }
+
+  // Navigate to Sidebar (desktop) or Home (mobile)
+  void _navigateToMainScreen() {
+    final isDesktop = Platform.isMacOS || Platform.isWindows;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => isDesktop ? const Sidebar() : const Home(),
+      ),
+    );
   }
 
   Future<void> signIn() async {
@@ -64,12 +73,9 @@ class _LoginState extends State<Login> {
         'ip': 'N/A',
       }, SetOptions(merge: true));
 
-      // Navigate to Sidebar page
+      // Navigate to Sidebar (desktop) or Home (mobile)
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => Sidebar()),
-        );
+        _navigateToMainScreen();
       }
     } on FirebaseAuthException catch (e) {
       String errorMessage;
@@ -251,7 +257,7 @@ class _LoginState extends State<Login> {
 
   @override
   void dispose() {
-    _authStateSubscription?.cancel(); // Cancel the auth state listener
+    _authStateSubscription?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();

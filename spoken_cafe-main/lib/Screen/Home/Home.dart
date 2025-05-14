@@ -156,6 +156,7 @@ class _HomeState extends ConsumerState<Home> {
         style: TextStyle(
           fontWeight: FontWeight.bold,
           color: Color(0xff1B1212),
+          fontSize: 30,
         ),
       ),
       centerTitle: true,
@@ -337,7 +338,7 @@ class _HomeState extends ConsumerState<Home> {
 
   Widget _buildCarousel(List<dynamic> mediaFiles) {
     return SizedBox(
-      height: 250,
+      height: 500,
       child: PageView.builder(
         itemCount: mediaFiles.length,
         itemBuilder: (context, index) {
