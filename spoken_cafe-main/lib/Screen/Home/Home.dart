@@ -1,4 +1,7 @@
+
+
 import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,9 +13,7 @@ import 'package:spokencafe/AddPhotoAndVideo/AddPhotoAndVideo.dart';
 import 'package:spokencafe/CommentPage/CommentPage.dart';
 import 'package:spokencafe/Notifiction/Notifiction.dart';
 import 'package:spokencafe/model/NavBar/NavBar.dart';
-import 'package:spokencafe/model/student/profile_student/profile_student.dart';
 import 'package:spokencafe/profile/All_Users_Profile/All_Users_Profile.dart';
-import 'package:spokencafe/profile/Profile.dart';
 import 'package:video_player/video_player.dart';
 
 class Home extends ConsumerStatefulWidget {
@@ -24,7 +25,7 @@ class Home extends ConsumerStatefulWidget {
 
 class _HomeState extends ConsumerState<Home> {
   String? role;
-  Map<String, dynamic> userData = {};
+  bool isVerified = false;
   User? currentUser = FirebaseAuth.instance.currentUser;
   List<Map<String, dynamic>> allUsers = [];
   final Map<String, Stream<int>> _commentCountStreams = {};
@@ -34,6 +35,7 @@ class _HomeState extends ConsumerState<Home> {
     super.initState();
     _refreshUser();
     _fetchAllUsers();
+    _fetchVerificationStatus();
   }
 
   Future<void> _refreshUser() async {
@@ -43,17 +45,29 @@ class _HomeState extends ConsumerState<Home> {
     });
   }
 
+  Future<void> _fetchVerificationStatus() async {
+    if (currentUser == null) return;
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser!.uid)
+        .get();
+    setState(() {
+      isVerified = (doc.data()?['isVerified'] ?? false) as bool;
+    });
+  }
+
   Future<void> _fetchAllUsers() async {
     try {
-      final snapshot = await FirebaseFirestore.instance.collection('users').get();
+      final snapshot =
+          await FirebaseFirestore.instance.collection('users').get();
       final users = snapshot.docs.map((doc) {
+        final data = doc.data();
         return {
           'uid': doc.id,
-          ...doc.data(),
-          'profileImageUrl': doc.data()['profileImageUrl'] ?? '',
-          'name': doc.data()['name'] ?? '',
-          'surname': doc.data()['surname'] ?? '',
-          'role': doc.data()['role'] ?? 'student',
+          'profileImageUrl': data['profileImageUrl'] ?? '',
+          'name': data['name'] ?? '',
+          'surname': data['surname'] ?? '',
+          'role': data['role'] ?? 'student',
         };
       }).toList();
 
@@ -73,9 +87,9 @@ class _HomeState extends ConsumerState<Home> {
   }
 
   Stream<int> _getCommentCountStream(String postId) {
-    if (!_commentCountStreams.containsKey(postId)) { // Fixed typo: removed "Guar"
+    if (!_commentCountStreams.containsKey(postId)) {
       _commentCountStreams[postId] = FirebaseFirestore.instance
-          .collection('User posts')
+          .collection('posts')
           .doc(postId)
           .collection('Comments')
           .snapshots()
@@ -98,23 +112,23 @@ class _HomeState extends ConsumerState<Home> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(
-                 color:  Color(0xff1B1212),
-                  backgroundColor: Colors.white,
+                color: Color(0xff1B1212),
+                backgroundColor: Colors.white,
               ),
             );
           }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          final posts = snapshot.data?.docs ?? [];
+          if (posts.isEmpty) {
             return const Center(child: Text('No posts found.'));
           }
 
-          final posts = snapshot.data!.docs;
-
           return RefreshIndicator(
-            color:  Color(0xff1B1212),
+            color: const Color(0xff1B1212),
             backgroundColor: Colors.white,
             onRefresh: () async {
               await _refreshUser();
               await _fetchAllUsers();
+              await _fetchVerificationStatus();
             },
             child: ListView.builder(
               itemCount: posts.length,
@@ -127,28 +141,71 @@ class _HomeState extends ConsumerState<Home> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'btn1',
-        backgroundColor: const Color(0xff1B1212),
-        onPressed: () => showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.white,
-          builder: (context) => Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
+      floatingActionButton: role == 'teacher'
+          ? FloatingActionButton(
+              heroTag: 'btn1',
+              backgroundColor: isVerified
+                  ? const Color(0xff1B1212)
+                  : Colors.grey,
+              onPressed: () {
+                if (!isVerified) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                      content: Text(
+                          'Your account is awaiting approval from admin.',),
+                    ),
+                  );
+                  return;
+                }
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.white,
+                  builder: (context) => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
+                    ),
+                    child: AddPhotoAndVideo(
+                      onPostCreated: (_) => Navigator.pop(context),
+                    ),
+                  ),
+                );
+              },
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : FloatingActionButton(
+              heroTag: 'btn1',
+              backgroundColor: const Color(0xff1B1212),
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.white,
+                builder: (context) => Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: AddPhotoAndVideo(
+                    onPostCreated: (_) => Navigator.pop(context),
+                  ),
+                ),
+              ),
+              child: const Icon(Icons.add, color: Colors.white),
             ),
-            child: AddPhotoAndVideo(
-              onPostCreated: (_) => Navigator.pop(context),
-            ),
-          ),
-        ),
-        child: const Icon(Icons.add, color: Colors.white,),
-      ),
     );
   }
 
   AppBar _buildAppBar() {
+    Widget leadingIcon;
+    if (role == 'teacher') {
+      leadingIcon = isVerified
+          ? const Icon(Icons.verified, color: Colors.green)
+          : const Icon(Icons.hourglass_top, color: Colors.orange);
+    } else {
+      leadingIcon = const Icon(Icons.verified, color: Colors.green);
+    }
+
     return AppBar(
       backgroundColor: Colors.white,
       title: const Text(
@@ -160,20 +217,23 @@ class _HomeState extends ConsumerState<Home> {
         ),
       ),
       centerTitle: true,
-      leading: const Icon(Icons.verified, color: Colors.green),
+      leading: leadingIcon,
       actions: [
         IconButton(
           icon: const Icon(Icons.notifications, color: Color(0xff1B1212)),
           onPressed: () {
             Navigator.push(
-                context, MaterialPageRoute(builder: (context) => Notifiction(),),);
+              context,
+              MaterialPageRoute(builder: (context) => const Notifiction()),
+            );
           },
         ),
       ],
     );
   }
 
-  Widget _buildPostCard(String postId, Map<String, dynamic> postData) {
+  Widget _buildPostCard(
+      String postId, Map<String, dynamic> postData) {
     final userData = allUsers.firstWhere(
       (user) => user['uid'] == postData['userId'],
       orElse: () => {
@@ -201,9 +261,11 @@ class _HomeState extends ConsumerState<Home> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildPostHeader(postId, postData, userData),
-          if (postData['text'] != null && postData['text'].isNotEmpty)
+          if (postData['text'] != null &&
+              postData['text'].isNotEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               child: Text(
                 postData['text'],
                 style: const TextStyle(
@@ -211,7 +273,8 @@ class _HomeState extends ConsumerState<Home> {
                 ),
               ),
             ),
-          if (postData['mediaFiles'] != null && postData['mediaFiles'].isNotEmpty)
+          if (postData['mediaFiles'] != null &&
+              postData['mediaFiles'].isNotEmpty)
             _buildCarousel(postData['mediaFiles']),
           _buildPostActions(postId, postData),
         ],
@@ -219,12 +282,13 @@ class _HomeState extends ConsumerState<Home> {
     );
   }
 
-  Widget _buildPostHeader(
-      String postId, Map<String, dynamic> postData, Map<String, dynamic> userData) {
+  Widget _buildPostHeader(String postId,
+      Map<String, dynamic> postData, Map<String, dynamic> userData) {
     return Padding(
       padding: const EdgeInsets.all(10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment:
+            MainAxisAlignment.spaceBetween,
         children: [
           GestureDetector(
             onTap: () {
@@ -234,7 +298,8 @@ class _HomeState extends ConsumerState<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => AllUsersProfile(userId: userData['uid']),
+                    builder: (context) =>
+                        AllUsersProfile(userId: userData['uid']),
                   ),
                 );
               }
@@ -244,18 +309,24 @@ class _HomeState extends ConsumerState<Home> {
                 CircleAvatar(
                   radius: 20,
                   backgroundColor: Colors.grey,
-                  backgroundImage: userData['profileImageUrl'] != null &&
-                          userData['profileImageUrl'].isNotEmpty
-                      ? CachedNetworkImageProvider(userData['profileImageUrl'])
-                      : null,
+                  backgroundImage:
+                      userData['profileImageUrl'] != null &&
+                              userData['profileImageUrl']
+                                  .isNotEmpty
+                          ? CachedNetworkImageProvider(
+                              userData['profileImageUrl'])
+                          : null,
                   child: userData['profileImageUrl'] == null ||
-                          userData['profileImageUrl'].isEmpty
-                      ? const Icon(Icons.person, color: Colors.white)
+                          userData['profileImageUrl']
+                              .isEmpty
+                      ? const Icon(Icons.person,
+                          color: Colors.white)
                       : null,
                 ),
                 const SizedBox(width: 10),
                 Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
                   children: [
                     Text(
                       '${userData['name']} ${userData['surname']}',
@@ -267,9 +338,11 @@ class _HomeState extends ConsumerState<Home> {
                       Builder(
                         builder: (context) {
                           final postDate =
-                              (postData['createdAt'] as Timestamp).toDate();
+                              (postData['createdAt'] as Timestamp)
+                                  .toDate();
                           return Text(
-                            DateFormat('MMM dd, yyyy').format(postDate),
+                            DateFormat('MMM dd, yyyy')
+                                .format(postDate),
                             style: const TextStyle(
                               fontSize: 12,
                               color: Colors.grey,
@@ -293,13 +366,15 @@ class _HomeState extends ConsumerState<Home> {
                     backgroundColor: Colors.white,
                     builder: (context) => Padding(
                       padding: EdgeInsets.only(
-                        bottom: MediaQuery.of(context).viewInsets.bottom,
+                        bottom:
+                            MediaQuery.of(context).viewInsets.bottom,
                       ),
                       child: AddPhotoAndVideo(
                         isEditing: true,
                         existingPostId: postId,
                         existingPostData: postData,
-                        onPostCreated: (_) => Navigator.pop(context),
+                        onPostCreated: (_) =>
+                            Navigator.pop(context),
                       ),
                     ),
                   );
@@ -373,14 +448,20 @@ class _HomeState extends ConsumerState<Home> {
                                       child: CachedNetworkImage(
                                         imageUrl: mediaUrl,
                                         fit: BoxFit.contain,
-                                        placeholder: (context, url) => const Center(
-                                          child: CircularProgressIndicator(
-                                            backgroundColor: Colors.white,
-                                            color: Color(0xff1B1212),
+                                        placeholder:
+                                            (context, url) =>
+                                                const Center(
+                                          child:
+                                              CircularProgressIndicator(
+                                            backgroundColor:
+                                                Colors.white,
+                                            color:
+                                                Color(0xff1B1212),
                                           ),
                                         ),
-                                        errorWidget: (context, url, error) =>
-                                            const Icon(Icons.error),
+                                        errorWidget:
+                                            (context, url, error) =>
+                                                const Icon(Icons.error),
                                       ),
                                     ),
                                   ),
@@ -406,16 +487,20 @@ class _HomeState extends ConsumerState<Home> {
                       },
                       child: CachedNetworkImage(
                         imageUrl: mediaUrl,
-                        width: MediaQuery.of(context).size.width,
+                        width:
+                            MediaQuery.of(context).size.width,
                         fit: BoxFit.cover,
-                        placeholder: (context, url) => const Center(
+                        placeholder: (context, url) =>
+                            const Center(
                           child: CircularProgressIndicator(
-                             color:  Color(0xff1B1212),
-                               backgroundColor: Colors.white,
+                            color: Color(0xff1B1212),
+                            backgroundColor:
+                                Colors.white,
                           ),
                         ),
-                        errorWidget: (context, url, error) =>
-                            const Icon(Icons.error),
+                        errorWidget:
+                            (context, url, error) =>
+                                const Icon(Icons.error),
                       ),
                     ),
             ),
@@ -425,14 +510,17 @@ class _HomeState extends ConsumerState<Home> {
     );
   }
 
-  Widget _buildPostActions(String postId, Map<String, dynamic> post) {
+  Widget _buildPostActions(
+      String postId, Map<String, dynamic> post) {
     final likes = List<String>.from(post['likes'] ?? []);
     final isLiked = likes.contains(currentUser?.uid);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment:
+            MainAxisAlignment.spaceBetween,
         children: [
           Row(
             children: [
@@ -442,13 +530,30 @@ class _HomeState extends ConsumerState<Home> {
                   color: Color(0xff1B1212),
                 ),
                 onPressed: () {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => CommentPage(
-                                postId: postId,
-                                comments: {},
-                              ),),);
+                   if (!isVerified) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                              content: Text(
+                                'Your account is awaiting approval from admin.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                CommentPage(
+                              postId: postId,
+                              comments: {},
+                            ),
+                          ),
+                        );
+                      
+                 
                 },
               ),
               StreamBuilder<int>(
@@ -467,10 +572,15 @@ class _HomeState extends ConsumerState<Home> {
               const SizedBox(width: 10),
               IconButton(
                 icon: Icon(
-                  isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: isLiked ? Colors.red : const Color(0xff1B1212),
+                  isLiked
+                      ? Icons.favorite
+                      : Icons.favorite_border,
+                  color: isLiked
+                      ? Colors.red
+                      : const Color(0xff1B1212),
                 ),
-                onPressed: () => _toggleLike(postId, isLiked),
+                onPressed: () =>
+                    _toggleLike(postId, isLiked),
               ),
               Text(
                 '${likes.length}',
@@ -480,18 +590,22 @@ class _HomeState extends ConsumerState<Home> {
                 ),
               ),
             ],
-          ),
+          ),  
           IconButton(
             icon: const Icon(Icons.share, color: Color(0xff1B1212)),
-            onPressed: () => Share.share(post['text'] ?? 'Check out this post!'),
+            onPressed: () =>
+                Share.share(post['text'] ??
+                    'Check out this post!'),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _toggleLike(String postId, bool isLiked) async {
-    final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
+  Future<void> _toggleLike(
+      String postId, bool isLiked) async {
+    final postRef =
+        FirebaseFirestore.instance.collection('posts').doc(postId);
     try {
       if (isLiked) {
         await postRef.update({
@@ -525,10 +639,12 @@ class VideoPlayerWidget extends StatefulWidget {
   });
 
   @override
-  _VideoPlayerWidgetState createState() => _VideoPlayerWidgetState();
+  _VideoPlayerWidgetState createState() =>
+      _VideoPlayerWidgetState();
 }
 
-class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
+class _VideoPlayerWidgetState
+    extends State<VideoPlayerWidget> {
   late VideoPlayerController _controller;
   bool _isInitialized = false;
 
@@ -536,8 +652,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   void initState() {
     super.initState();
     _controller = widget.isNetwork
-        ? VideoPlayerController.contentUri(Uri.parse(widget.videoUrl))
-        : VideoPlayerController.file(File(widget.videoUrl))
+        ? VideoPlayerController.contentUri(
+            Uri.parse(widget.videoUrl))
+        : VideoPlayerController.file(
+            File(widget.videoUrl))
       ..initialize().then((_) {
         setState(() {
           _isInitialized = true;
@@ -563,12 +681,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             alignment: Alignment.center,
             children: [
               AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
+                aspectRatio:
+                    _controller.value.aspectRatio,
                 child: VideoPlayer(_controller),
               ),
               IconButton(
                 icon: Icon(
-                  _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                  _controller.value.isPlaying
+                      ? Icons.pause
+                      : Icons.play_arrow,
                   color: Colors.white,
                   size: 50,
                 ),
@@ -592,4 +713,3 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           );
   }
 }
-

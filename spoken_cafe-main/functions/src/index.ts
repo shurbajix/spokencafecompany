@@ -1,18 +1,38 @@
-import * as admin from "firebase-admin";
+// import * as admin from "firebase-admin";
+// import {
+//   onLessonCreated,
+// } from "./notifications/lessonNotifications";
+// import {
+//   createStudentNestpayPaymentHttp,
+// } from "./payments/createStudentNestpayPaymentHttp";
+// import {
+//   payWithRecurringId,
+// } from "./payments/recurringPayments";
+// import {
+//   processTeacherPayout,
+// } from "./payments/teacherPayouts";
 
-// Initialize Firebase Admin only once
+// if (!admin.apps.length) {
+//   admin.initializeApp();
+// }
+
+// export {
+//   createStudentNestpayPaymentHttp, onLessonCreated, payWithRecurringId,
+//   processTeacherPayout,
+// };
+import * as admin from "firebase-admin";
+import {onLessonCreated} from "./notifications/lessonNotifications";
+import {processNestpayPayment} from "./payments/createNestpayPaymentLink";
+import {payWithRecurringId} from "./payments/recurringPayments";
+import {processTeacherPayout} from "./payments/teacherPayouts";
+
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-// Import functions
-import {onLessonCreated} from "./notifications/lessonNotifications";
-import {createStudentPaymentIntent} from "./payments/studentPayments";
-import {processTeacherPayout} from "./payments/teacherPayouts";
-
-// Export functions to Firebase
 export {
+  processNestpayPayment,
   onLessonCreated,
-  createStudentPaymentIntent,
+  payWithRecurringId,
   processTeacherPayout,
 };

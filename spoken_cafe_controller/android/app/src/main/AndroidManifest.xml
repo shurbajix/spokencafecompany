@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+<uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION"/>
     <application
-        android:label="spoken_cafe_controller"
+        android:label="Spoken Cafe Controller"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

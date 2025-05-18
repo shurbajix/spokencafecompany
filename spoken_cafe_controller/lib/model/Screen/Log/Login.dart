@@ -132,6 +132,7 @@ class _LoginState extends State<Login> {
 
         return Scaffold(
           appBar: AppBar(
+            centerTitle: true,
             title: const Text(
               'Spoken Cafe Control',
               textAlign: TextAlign.center,

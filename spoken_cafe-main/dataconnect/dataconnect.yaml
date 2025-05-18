@@ -1,0 +1,12 @@
+specVersion: "v1beta"
+serviceId: "spoken_cafe-main"
+location: "asia-east1"
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "fdcdb"
+      cloudSql:
+        instanceId: "spoken_cafe-main-fdc"
+      # schemaValidation: "COMPATIBLE"
+connectorDirs: ["./connector"]

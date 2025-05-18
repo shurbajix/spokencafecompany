@@ -1,231 +1,51 @@
-// import 'package:flutter/material.dart';
 
-// class Students extends StatefulWidget {
-//   const Students({super.key});
 
-//   @override
-//   State<Students> createState() => _StudentsState();
-// }
+import 'dart:io';
 
-// class _StudentsState extends State<Students> {
-//   final ScrollController _scrollController =
-//       ScrollController(); // ✅ Create ScrollController
-
-//   @override
-//   void dispose() {
-//     _scrollController.dispose(); // ✅ Dispose it to prevent memory leaks
-//     super.dispose();
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       endDrawer: Drawer(
-//         width: 700,
-//         child: Column(
-//           children: [
-//             DrawerHeader(
-//               decoration: BoxDecoration(
-//                 color: Colors.blue,
-//                 borderRadius: BorderRadius.circular(10),
-//               ),
-//               child: Center(
-//                 child: Text(
-//                   'Image Drawer',
-//                   style: TextStyle(fontSize: 20, color: Colors.white),
-//                 ),
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//       body: ListView(
-//         shrinkWrap: true,
-//         children: [
-//           // Static Header Row
-//           Row(
-//             children: [
-//               Expanded(
-//                 flex: 1,
-//                 child: Container(
-//                   margin: const EdgeInsets.all(10),
-//                   decoration: BoxDecoration(
-//                     color: Colors.grey,
-//                     borderRadius: BorderRadius.circular(10),
-//                   ),
-//                   child: const Column(
-//                     children: [
-//                       Text('Underlines', style: TextStyle(fontSize: 20)),
-//                     ],
-//                   ),
-//                 ),
-//               ),
-//               Expanded(
-//                 flex: 1,
-//                 child: Container(
-//                   margin: const EdgeInsets.all(10),
-//                   decoration: BoxDecoration(
-//                     color: Colors.grey,
-//                     borderRadius: BorderRadius.circular(10),
-//                   ),
-//                   child: const Column(
-//                     children: [
-//                       Text('Underlines', style: TextStyle(fontSize: 20)),
-//                     ],
-//                   ),
-//                 ),
-//               ),
-//             ],
-//           ),
-
-//           // Scrollable Container with Fixed Height
-//           Container(
-//             margin: const EdgeInsets.all(10),
-//             decoration: BoxDecoration(
-//               color: Colors.white,
-//               borderRadius: BorderRadius.circular(10),
-//               boxShadow: [
-//                 BoxShadow(
-//                   color: Colors.black.withOpacity(0.1),
-//                   blurRadius: 4,
-//                   spreadRadius: 2,
-//                 ),
-//               ],
-//             ),
-//             height: 600, // ✅ Fixed height for scrolling inside this container
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.stretch,
-//               children: [
-//                 const Padding(
-//                   padding: EdgeInsets.all(10),
-//                   child: Text(
-//                     "Student List",
-//                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-//                   ),
-//                 ),
-//                 const Divider(),
-
-//                 // ✅ Scrollbar with ScrollController
-//                 Expanded(
-//                   child: Scrollbar(
-//                     controller: _scrollController, // ✅ Assign ScrollController
-//                     thickness: 8, // Optional: For desktop apps
-//                     radius: const Radius.circular(10),
-//                     child: ListView.builder(
-//                       controller:
-//                           _scrollController, // ✅ Assign ScrollController
-//                       itemCount: 90,
-//                       itemBuilder: (context, index) {
-//                         return ListTile(
-//                           contentPadding: const EdgeInsets.symmetric(
-//                             horizontal: 20,
-//                           ),
-//                           trailing: SizedBox(
-//                             width: 279,
-//                             child: Row(
-//                               mainAxisSize: MainAxisSize.min,
-//                               children: [
-//                                 Expanded(
-//                                   child: TextButton(
-//                                     onPressed: () {},
-//                                     child: const Text(
-//                                       'Accept',
-//                                       style: TextStyle(
-//                                         color: Colors.green,
-//                                         fontSize: 20,
-//                                       ),
-//                                     ),
-//                                   ),
-//                                 ),
-//                                 Expanded(
-//                                   child: TextButton(
-//                                     onPressed: () {},
-//                                     child: const Text(
-//                                       'Delete',
-//                                       style: TextStyle(
-//                                         color: Colors.red,
-//                                         fontSize: 20,
-//                                       ),
-//                                     ),
-//                                   ),
-//                                 ),
-//                                 Expanded(
-//                                   child: TextButton(
-//                                     onPressed: () {
-//                                       Scaffold.of(context).openEndDrawer();
-//                                     },
-//                                     child: const Text(
-//                                       'View',
-//                                       style: TextStyle(
-//                                         color: Colors.black,
-//                                         fontSize: 20,
-//                                       ),
-//                                     ),
-//                                   ),
-//                                 ),
-//                               ],
-//                             ),
-//                           ),
-//                           title: Row(
-//                             mainAxisSize: MainAxisSize.min,
-//                             children: [
-//                               const CircleAvatar(
-//                                 radius: 20,
-//                                 backgroundColor: Colors.amber,
-//                               ),
-//                               const SizedBox(width: 10),
-//                               Expanded(
-//                                 child: Column(
-//                                   crossAxisAlignment: CrossAxisAlignment.start,
-//                                   children: const [
-//                                     Text(
-//                                       'androidsdsd3@gmail.com',
-//                                       overflow: TextOverflow.ellipsis,
-//                                     ),
-//                                     Text('sohaibshs'),
-//                                   ],
-//                                 ),
-//                               ),
-//                             ],
-//                           ),
-//                         );
-//                       },
-//                     ),
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class Student {
   final String name;
   final String email;
   final String phoneNumber;
   final String docId;
+  final String? profileImageUrl;
+  final String? verificationVideo;
+  final String? verificationDocument;
+  final String? verificationDescription;
+  final bool isVerified;
 
   Student({
     required this.name,
     required this.email,
     required this.phoneNumber,
     required this.docId,
+    this.profileImageUrl,
+    this.verificationVideo,
+    this.verificationDocument,
+    this.verificationDescription,
+    required this.isVerified,
   });
 
   factory Student.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>?;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
     return Student(
-      name: data?['name']?.toString() ?? 'No name',
-      email: data?['email']?.toString() ?? 'No email',
-      phoneNumber: data?['phoneNumber']?.toString() ?? 'No phone number',
+      name: data['name']?.toString() ?? 'No name',
+      email: data['email']?.toString() ?? 'No email',
+      phoneNumber: data['phoneNumber']?.toString() ?? 'No phone number',
       docId: doc.id,
+      profileImageUrl: data['profileImageUrl'] ?? '',
+      verificationVideo: data['verificationVideo'] as String?,
+      verificationDocument: data['verificationDocument'] as String?,
+      verificationDescription: data['verificationDescription'] as String?,
+      isVerified: data['isVerified'] == true,
     );
   }
 }
@@ -239,6 +59,8 @@ class Students extends StatefulWidget {
 
 class _StudentsState extends State<Students> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+
   bool _showPostsPage = false;
   bool _showGalleryPage = false;
   List<Student> students = [];
@@ -252,6 +74,14 @@ class _StudentsState extends State<Students> {
   void initState() {
     super.initState();
     _initializeFirebase();
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _initializeFirebase() {
@@ -271,7 +101,6 @@ class _StudentsState extends State<Students> {
     try {
       User? user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Authentication required. Please sign in.');
-
       await user.getIdToken();
 
       QuerySnapshot snapshot = await _usersCollection
@@ -279,12 +108,8 @@ class _StudentsState extends State<Students> {
           .get()
           .timeout(const Duration(seconds: 15));
 
-      List<Student> fetchedStudents = snapshot.docs.map((doc) => Student.fromFirestore(doc)).toList();
-
-      setState(() {
-        students = fetchedStudents;
-        isLoading = false;
-      });
+      students = snapshot.docs.map((doc) => Student.fromFirestore(doc)).toList();
+      setState(() => isLoading = false);
     } on FirebaseException catch (e) {
       setState(() {
         errorMessage = _handleFirebaseError(e);
@@ -315,7 +140,6 @@ class _StudentsState extends State<Students> {
         type: FileType.video,
         allowMultiple: false,
       );
-
       if (result != null) {
         PlatformFile file = result.files.first;
         print("File picked: ${file.name}");
@@ -325,14 +149,79 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
+  Future<void> _downloadImage(String imageUrl) async {
+    try {
+      var status = await Permission.storage.request();
+      if (!status.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Storage permission is required to download images.')),
+        );
+        return;
+      }
+
+      Directory directory;
+      if (Platform.isAndroid) {
+        directory = (await getExternalStorageDirectory())!;
+      } else if (Platform.isIOS) {
+        directory = await getApplicationDocumentsDirectory();
+      } else {
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      String fileName = imageUrl.split('/').last.split('?').first;
+      String savePath = '${directory.path}/$fileName';
+
+      Dio dio = Dio();
+      await dio.download(imageUrl, savePath);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Downloaded to $savePath')),
+      );
+    } catch (e, stacktrace) {
+      print('Download error: $e');
+      print('Stack trace: $stacktrace');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error downloading image: $e')),
+      );
+    }
+  }
+
+  List<Student> get _filteredStudents {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return students;
+    return students.where((s) {
+      return s.name.toLowerCase().contains(q) ||
+          s.email.toLowerCase().contains(q) ||
+          s.phoneNumber.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  bool _isVideoUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.avi') ||
+        lower.endsWith('.wmv') ||
+        lower.endsWith('.flv') ||
+        lower.endsWith('.mkv');
+  }
+
+  void _showFullScreenImage(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        child: InteractiveViewer(
+          child: Image.network(imageUrl, fit: BoxFit.contain),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final displayList = _filteredStudents;
+
     return Scaffold(
       endDrawer: Drawer(
         width: 700,
@@ -345,10 +234,23 @@ class _StudentsState extends State<Students> {
       body: ListView(
         shrinkWrap: true,
         children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search by name, email or phone',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Colors.grey),
+                ),
+              ),
+            ),
+          ),
           Row(
             children: [
               Expanded(
-                flex: 1,
                 child: Container(
                   margin: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -363,7 +265,6 @@ class _StudentsState extends State<Students> {
                 ),
               ),
               Expanded(
-                flex: 1,
                 child: Container(
                   margin: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -423,134 +324,124 @@ class _StudentsState extends State<Students> {
                                 ],
                               ),
                             )
-                          : students.isEmpty
+                          : displayList.isEmpty
                               ? const Center(child: Text('No students found'))
-                              : Scrollbar(
-                                  controller: _scrollController,
-                                  thickness: 8,
-                                  radius: const Radius.circular(10),
-                                  child: ListView.builder(
+                              : RefreshIndicator(
+                                  onRefresh: () async {
+                                    _hasFetched = false;
+                                    await _fetchStudents();
+                                  },
+                                  child: Scrollbar(
                                     controller: _scrollController,
-                                    itemCount: students.length,
-                                    itemBuilder: (context, index) {
-                                      return ListTile(
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                                        trailing: SizedBox(
-                                          width: 279,
-                                          child: Row(
+                                    thickness: 8,
+                                    radius: const Radius.circular(10),
+                                    child: ListView.builder(
+                                      controller: _scrollController,
+                                      itemCount: displayList.length,
+                                      itemBuilder: (context, index) {
+                                        final s = displayList[index];
+                                        return ListTile(
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                                          trailing: SizedBox(
+                                            width: 279,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Expanded(
+                                                  child: TextButton(
+                                                    onPressed: () {
+                                                      // Implement accept logic or disable if you want
+                                                    },
+                                                    child: const Text(
+                                                      'Accept',
+                                                      style: TextStyle(color: Colors.green, fontSize: 20),
+                                                    ),
+                                                  ),
+                                                ),
+                                                Expanded(
+                                                  child: TextButton(
+                                                    onPressed: () {
+                                                      showDialog(
+                                                        context: context,
+                                                        builder: (context) {
+                                                          final ctrl = TextEditingController();
+                                                          return AlertDialog(
+                                                            backgroundColor: Colors.white,
+                                                            title: const Text('Write the Reason for rejection'),
+                                                            content: TextFormField(
+                                                              controller: ctrl,
+                                                              decoration: InputDecoration(
+                                                                border: OutlineInputBorder(
+                                                                  borderRadius: BorderRadius.circular(10),
+                                                                ),
+                                                                hintText: 'Enter reason',
+                                                              ),
+                                                            ),
+                                                            actions: [
+                                                              TextButton(
+                                                                onPressed: () => Navigator.pop(context),
+                                                                child: const Text('Cancel', style: TextStyle(color: Colors.red, fontSize: 20)),
+                                                              ),
+                                                              TextButton(
+                                                                onPressed: () {
+                                                                  // Implement rejection logic here with ctrl.text
+                                                                  Navigator.pop(context);
+                                                                },
+                                                                child: const Text('Reject', style: TextStyle(color: Colors.red, fontSize: 20)),
+                                                              ),
+                                                            ],
+                                                          );
+                                                        },
+                                                      );
+                                                    },
+                                                    child: const Text('Delete', style: TextStyle(color: Colors.red, fontSize: 20)),
+                                                  ),
+                                                ),
+                                                Expanded(
+                                                  child: TextButton(
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _selectedStudentDocId = s.docId;
+                                                        _showPostsPage = false;
+                                                        _showGalleryPage = false;
+                                                      });
+                                                      Scaffold.of(context).openEndDrawer();
+                                                    },
+                                                    child: const Text('View', style: TextStyle(color: Colors.black, fontSize: 20)),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          title: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Expanded(
-                                                child: TextButton(
-                                                  onPressed: () {},
-                                                  child: const Text(
-                                                    'Accept',
-                                                    style: TextStyle(
-                                                      color: Colors.green,
-                                                      fontSize: 20,
-                                                    ),
-                                                  ),
-                                                ),
+                                              CircleAvatar(
+                                                radius: 20,
+                                                backgroundColor: Colors.amber,
+                                                backgroundImage: s.profileImageUrl != null && s.profileImageUrl!.isNotEmpty
+                                                    ? NetworkImage(s.profileImageUrl!)
+                                                    : null,
+                                                child: (s.profileImageUrl == null || s.profileImageUrl!.isEmpty)
+                                                    ? const Icon(Icons.person, size: 20, color: Colors.white)
+                                                    : null,
                                               ),
+                                              const SizedBox(width: 10),
                                               Expanded(
-                                                child: TextButton(
-                                                  onPressed: () {
-                                                    showDialog(
-                                                      context: context,
-                                                      builder: (context) {
-                                                        return AlertDialog(
-                                                          backgroundColor: Colors.white,
-                                                          title: const Text('Write the Reason not Accept'),
-                                                          content: TextFormField(
-                                                            decoration: InputDecoration(
-                                                              border: OutlineInputBorder(
-                                                                borderRadius: BorderRadius.circular(10),
-                                                              ),
-                                                              hintText: 'Enter reason',
-                                                            ),
-                                                          ),
-                                                          actions: [
-                                                            TextButton(
-                                                              onPressed: () {
-                                                                Navigator.pop(context);
-                                                              },
-                                                              child: const Text(
-                                                                'Cancel',
-                                                                style: TextStyle(color: Colors.red, fontSize: 20),
-                                                              ),
-                                                            ),
-                                                            TextButton(
-                                                              onPressed: () {},
-                                                              child: const Text(
-                                                                'Accept',
-                                                                style: TextStyle(color: Colors.green, fontSize: 20),
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        );
-                                                      },
-                                                    );
-                                                  },
-                                                  child: const Text(
-                                                    'Delete',
-                                                    style: TextStyle(
-                                                      color: Colors.red,
-                                                      fontSize: 20,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              Expanded(
-                                                child: TextButton(
-                                                  onPressed: () {
-                                                    setState(() {
-                                                      _selectedStudentDocId = students[index].docId;
-                                                    });
-                                                    Scaffold.of(context).openEndDrawer();
-                                                  },
-                                                  child: const Text(
-                                                    'View',
-                                                    style: TextStyle(
-                                                      color: Colors.black,
-                                                      fontSize: 20,
-                                                    ),
-                                                  ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text('Name: ${s.name}', overflow: TextOverflow.ellipsis),
+                                                    Text('Email: ${s.email}', overflow: TextOverflow.ellipsis),
+                                                    Text('Phone: ${s.phoneNumber}', overflow: TextOverflow.ellipsis),
+                                                  ],
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        ),
-                                        title: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const CircleAvatar(
-                                              radius: 20,
-                                              backgroundColor: Colors.amber,
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    students[index].email,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                  Text(
-                                                    students[index].name,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                  Text(
-                                                    students[index].phoneNumber,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
+                                        );
+                                      },
+                                    ),
                                   ),
                                 ),
                 ),
@@ -564,7 +455,6 @@ class _StudentsState extends State<Students> {
 
   Widget _buildOriginalDrawerContent() {
     if (_selectedStudentDocId == null) {
-      print('Debug: No student selected');
       return const Center(child: Text('Please select a student to view their profile'));
     }
 
@@ -572,26 +462,19 @@ class _StudentsState extends State<Students> {
       future: _usersCollection.doc(_selectedStudentDocId).get(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          print('Debug: Fetching document for docId: $_selectedStudentDocId');
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          print('Debug: Error fetching document for docId: $_selectedStudentDocId, error: ${snapshot.error}');
           return const Center(child: Text('Error loading student data'));
         }
-        if (!snapshot.hasData || !snapshot.data!.exists || snapshot.data!.data() == null) {
-          print('Debug: No document found or data is null for docId: $_selectedStudentDocId');
+        if (!snapshot.hasData || !snapshot.data!.exists) {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('No student data found for this user'),
                 ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedStudentDocId = null;
-                    });
-                  },
+                  onPressed: () => setState(() => _selectedStudentDocId = null),
                   child: const Text('Back'),
                 ),
               ],
@@ -599,20 +482,16 @@ class _StudentsState extends State<Students> {
           );
         }
 
-        Map<String, dynamic>? data = snapshot.data!.data() as Map<String, dynamic>?;
-        if (data == null || data['role'] != 'student') {
-          print('Debug: Invalid data or user with docId $_selectedStudentDocId is not a student, data: $data');
+        final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+
+        if (data['role'] != 'student') {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('Selected user is not a student or data is invalid'),
                 ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedStudentDocId = null;
-                    });
-                  },
+                  onPressed: () => setState(() => _selectedStudentDocId = null),
                   child: const Text('Back'),
                 ),
               ],
@@ -620,18 +499,24 @@ class _StudentsState extends State<Students> {
           );
         }
 
-        Student student = Student.fromFirestore(snapshot.data!);
+        final student = Student.fromFirestore(snapshot.data!);
 
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const DrawerHeader(
-                decoration: BoxDecoration(color: Colors.blue),
+              DrawerHeader(
+                decoration: const BoxDecoration(color: Colors.blue),
                 child: Center(
-                  child: Text(
-                    'Image Drawer',
-                    style: TextStyle(fontSize: 20, color: Colors.white),
+                  child: CircleAvatar(
+                    radius: 50,
+                    backgroundColor: Colors.grey,
+                    backgroundImage: student.profileImageUrl != null && student.profileImageUrl!.isNotEmpty
+                        ? NetworkImage(student.profileImageUrl!)
+                        : null,
+                    child: (student.profileImageUrl == null || student.profileImageUrl!.isEmpty)
+                        ? const Icon(Icons.person, size: 50, color: Colors.white)
+                        : null,
                   ),
                 ),
               ),
@@ -647,66 +532,43 @@ class _StudentsState extends State<Students> {
                   ],
                 ),
               ),
-              const Text('Video Description', style: TextStyle(fontSize: 30)),
-              Container(
-                height: 200,
-                margin: const EdgeInsets.all(10),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.grey,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: IconButton(
-                  onPressed: _pickFile,
-                  icon: const Icon(Icons.add, size: 90),
-                ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.download, size: 40),
-                  ),
-                ],
-              ),
-              const Text('Description', style: TextStyle(fontSize: 30)),
-              Container(
-                margin: const EdgeInsets.all(10),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  border: Border.all(width: 2, color: Colors.black),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  'This will add the student description and help understand everything.',
-                  style: TextStyle(fontSize: 20),
-                ),
-              ),
+
+              const Divider(),
+              const Text('Description', style: TextStyle(fontSize: 18)),
               Padding(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8.0),
+                child: Text(student.verificationDescription ?? 'No description'),
+              ),
+              const Divider(),
+
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: ElevatedButton(
                   onPressed: () {
                     setState(() {
                       _showGalleryPage = true;
                       _showPostsPage = false;
                     });
+                    Scaffold.of(context).openEndDrawer();
                   },
                   child: const Text('Go to Gallery'),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: ElevatedButton(
                   onPressed: () {
                     setState(() {
                       _showPostsPage = true;
                       _showGalleryPage = false;
                     });
+                    Scaffold.of(context).openEndDrawer();
                   },
                   child: const Text('Go to Posts'),
                 ),
               ),
+              const SizedBox(height: 20),
             ],
           ),
         );
@@ -715,39 +577,317 @@ class _StudentsState extends State<Students> {
   }
 
   Widget _buildGalleryPage() {
-    return Center(
-      child: Column(
-        children: [
-          const SizedBox(height: 50),
-          const Text('Gallery Page', style: TextStyle(fontSize: 24)),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _showGalleryPage = false;
-              });
+    if (_selectedStudentDocId == null) {
+      return const Center(child: Text('No student selected'));
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .where('userId', isEqualTo: _selectedStudentDocId)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error loading gallery: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('No posts found'));
+        }
+
+        final posts = snapshot.data!.docs;
+
+        List<String> images = [];
+        List<String> videos = [];
+
+        for (var postDoc in posts) {
+          final postData = postDoc.data() as Map<String, dynamic>;
+          final List<dynamic>? mediaFiles = postData['mediaFiles'];
+          if (mediaFiles != null) {
+            for (var mediaUrl in mediaFiles) {
+              if (mediaUrl is String && mediaUrl.isNotEmpty) {
+                if (_isVideoUrl(mediaUrl)) {
+                  videos.add(mediaUrl);
+                } else {
+                  images.add(mediaUrl);
+                }
+              }
+            }
+          }
+        }
+
+        return DefaultTabController(
+          length: 2,
+          child: Scaffold(
+            appBar: AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new),
+                onPressed: () {
+                  setState(() {
+                    _showGalleryPage = false;
+                  });
+                  Scaffold.of(context).openEndDrawer();
+                },
+              ),
+              title: const Text('Gallery'),
+              bottom: const TabBar(
+                tabs: [
+                  Tab(text: 'Images'),
+                  Tab(text: 'Videos'),
+                ],
+              ),
+            ),
+            body: TabBarView(
+              children: [
+                images.isEmpty
+                    ? const Center(child: Text('No images found'))
+                    : Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: GridView.builder(
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                          ),
+                          itemCount: images.length,
+                          itemBuilder: (context, index) {
+                            final imageUrl = images[index];
+                            return GestureDetector(
+                              onTap: () => _showFullScreenImage(context, imageUrl),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  loadingBuilder:
+                                      (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return const Center(
+                                        child: CircularProgressIndicator());
+                                  },
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Icons.broken_image),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                videos.isEmpty
+                    ? const Center(child: Text('No videos found'))
+                    : ListView.builder(
+                        itemCount: videos.length,
+                        itemBuilder: (context, index) {
+                          final videoUrl = videos[index];
+                          return ListTile(
+                            leading: const Icon(Icons.play_circle_fill,
+                                size: 40, color: Colors.redAccent),
+                            title: Text('Video ${index + 1}'),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    VideoPlayerScreen(videoUrl: videoUrl),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPostsPage() {
+    if (_selectedStudentDocId == null) {
+      return const Center(child: Text('No student selected'));
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        automaticallyImplyLeading: false,
+        title: const Text('Posts'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          onPressed: () {
+            setState(() {
+              _showPostsPage = false;
+            });
+            Scaffold.of(context).openEndDrawer();
+          },
+        ),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('posts')
+            .where('userId', isEqualTo: _selectedStudentDocId)
+            .orderBy('createdAt', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('No posts found.'));
+          }
+          final posts = snapshot.data!.docs;
+
+          return GridView.builder(
+            padding: const EdgeInsets.all(8),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 18,
+              mainAxisSpacing: 18,
+              childAspectRatio: 0.7,
+            ),
+            itemCount: posts.length,
+            itemBuilder: (context, index) {
+              final postDoc = posts[index];
+              final postData = postDoc.data() as Map<String, dynamic>;
+              return _buildPostGridItem(postDoc.id, postData);
             },
-            child: const Text('Back'),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPostGridItem(String postId, Map<String, dynamic> postData) {
+    return Container(
+      margin: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.amber,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (postData['text'] != null && postData['text'].isNotEmpty)
+            Text(
+              postData['text'],
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          if (postData['description'] != null && postData['description'].isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6.0, bottom: 6.0),
+              child: Text(
+                postData['description'],
+                style: const TextStyle(fontSize: 14, color: Colors.black54),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          const SizedBox(height: 8),
+          if (postData['mediaFiles'] != null && postData['mediaFiles'].isNotEmpty)
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(
+                  postData['mediaFiles'][0],
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                ),
+              ),
+            ),
+          IconButton(
+            onPressed: () {
+              final imageUrl = postData['mediaFiles'][0];
+              if (imageUrl != null && imageUrl.isNotEmpty) {
+                _downloadImage(imageUrl);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No image to download')),
+                );
+              }
+            },
+            icon: const Icon(Icons.download),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildPostsPage() {
-    return Center(
-      child: Column(
-        children: [
-          const SizedBox(height: 50),
-          const Text('Posts Page', style: TextStyle(fontSize: 24)),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _showPostsPage = false;
-              });
-            },
-            child: const Text('Back'),
-          ),
-        ],
+class VideoPlayerScreen extends StatefulWidget {
+  final String videoUrl;
+  const VideoPlayerScreen({Key? key, required this.videoUrl}) : super(key: key);
+
+  @override
+  _VideoPlayerScreenState createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  late VideoPlayerController _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.network(widget.videoUrl)
+      ..initialize().then((_) {
+        setState(() {
+          _initialized = true;
+        });
+        _controller.play();
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.pause();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Video Player'),
+      ),
+      body: Center(
+        child: _initialized
+            ? AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    VideoPlayer(_controller),
+                    VideoProgressIndicator(_controller, allowScrubbing: true),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          if (_controller.value.isPlaying) {
+                            _controller.pause();
+                          } else {
+                            _controller.play();
+                          }
+                        });
+                      },
+                      child: Container(
+                        color: Colors.transparent,
+                        alignment: Alignment.center,
+                        child: !_controller.value.isPlaying
+                            ? const Icon(Icons.play_arrow, size: 80, color: Colors.white)
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : const CircularProgressIndicator(),
       ),
     );
   }

@@ -1,18 +1,15 @@
-
 import 'dart:async';
-import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:spokencafe/Credit_Card/Credit_key.dart';
 import 'package:spokencafe/Credit_Card/Cresit_Api.dart';
 import 'package:spokencafe/profile/All_Users_Profile/All_Users_Profile.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 
 class Lesson {
   final String title;
@@ -33,7 +30,7 @@ class SearchStudent extends ConsumerStatefulWidget {
 }
 
 class _SearchStudentState extends ConsumerState<SearchStudent> {
-  double? _teacherRating = 0.0;
+  final double _teacherRating = 0.0;
   List<DocumentSnapshot> _filteredLessons = [];
   List<Lesson> savedLessons = [];
   Position? _currentPosition;
@@ -46,7 +43,7 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
     super.initState();
     loadSavedLessons();
     _getCurrentLocation();
-    Stripe.publishableKey = stripPublishKey;
+    //Stripe.publishableKey = stripPublishKey;
   }
 
   @override
@@ -188,7 +185,8 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
           print('No location data for lesson ${lesson.id}');
           continue;
         } else {
-          print('Unexpected location format for lesson ${lesson.id}: $location');
+          print(
+              'Unexpected location format for lesson ${lesson.id}: $location');
           continue;
         }
 
@@ -225,19 +223,24 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
         .get();
 
     final takenLessonIds = takenLessonsSnapshot.docs
-        .where((doc) => doc.data().containsKey('lessonId') && doc['lessonId'] is String)
+        .where((doc) =>
+            doc.data().containsKey('lessonId') && doc['lessonId'] is String)
         .map((doc) => doc['lessonId'] as String)
         .toSet();
 
-    return lessons.where((lesson) => !takenLessonIds.contains(lesson.id)).toList();
+    return lessons
+        .where((lesson) => !takenLessonIds.contains(lesson.id))
+        .toList();
   }
 
   Future<void> _joinLesson(String lessonDocId, BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final lessonRef = FirebaseFirestore.instance.collection('lessons').doc(lessonDocId);
-    final takenLessonsRef = FirebaseFirestore.instance.collection('takenLessons');
+    final lessonRef =
+        FirebaseFirestore.instance.collection('lessons').doc(lessonDocId);
+    final takenLessonsRef =
+        FirebaseFirestore.instance.collection('takenLessons');
 
     try {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -245,14 +248,17 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
         if (!lessonSnapshot.exists) throw Exception("Lesson does not exist!");
 
         final lessonData = lessonSnapshot.data()!;
-        final currentStudentCount = (lessonData['currentStudentCount'] ?? 0) as int;
+        final currentStudentCount =
+            (lessonData['currentStudentCount'] ?? 0) as int;
 
         if (currentStudentCount >= 8) {
           throw Exception("Lesson is full. You cannot join.");
         }
 
         final teacherDoc = await transaction.get(
-          FirebaseFirestore.instance.collection('users').doc(lessonData['teacherId']),
+          FirebaseFirestore.instance
+              .collection('users')
+              .doc(lessonData['teacherId']),
         );
         final teacherData = teacherDoc.data() as Map<String, dynamic>;
         final teacherName = '${teacherData['name']} ${teacherData['surname']}';
@@ -324,7 +330,8 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
           .orderBy('dateTime', descending: true)
           .get();
 
-      var filtered = await _filterLessonsByDistance(lessonSnapshot.docs, distance);
+      var filtered =
+          await _filterLessonsByDistance(lessonSnapshot.docs, distance);
       filtered = await _excludeTakenLessons(filtered);
 
       if (mounted) {
@@ -358,7 +365,6 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         centerTitle: true,
-        
         backgroundColor: Colors.white,
         automaticallyImplyLeading: false,
         title: Row(
@@ -380,18 +386,25 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                   padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
-                    color: selectedIndex == index ? const Color(0xff1B1212) : Colors.transparent,
-                    border: Border.all(width: 1, color: const Color(0xff1B1212)),
+                    color: selectedIndex == index
+                        ? const Color(0xff1B1212)
+                        : Colors.transparent,
+                    border:
+                        Border.all(width: 1, color: const Color(0xff1B1212)),
                   ),
                   child: Column(
-                    children: [Text(
-                    '${waycoffes[index]}KM',
-                    style: TextStyle(
-                      fontSize: 25,
-                      color: selectedIndex == index ? Colors.white : const Color(0xff1B1212),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),],
+                    children: [
+                      Text(
+                        '${waycoffes[index]}KM',
+                        style: TextStyle(
+                          fontSize: 25,
+                          color: selectedIndex == index
+                              ? Colors.white
+                              : const Color(0xff1B1212),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -404,7 +417,7 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
         child: _isLocationLoading
             ? const Center(
                 child: CircularProgressIndicator(
-                   color:  Color(0xff1B1212),
+                  color: Color(0xff1B1212),
                   backgroundColor: Colors.white,
                 ),
               )
@@ -437,17 +450,19 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                     builder: (context, lessonSnapshot) {
                       if (!mounted) return const SizedBox.shrink();
 
-                      if (lessonSnapshot.connectionState == ConnectionState.waiting) {
+                      if (lessonSnapshot.connectionState ==
+                          ConnectionState.waiting) {
                         return const Center(
                           child: CircularProgressIndicator(
-                              color:  Color(0xff1B1212),
-                               backgroundColor: Colors.white,
+                            color: Color(0xff1B1212),
+                            backgroundColor: Colors.white,
                           ),
                         );
                       }
 
                       if (lessonSnapshot.hasError || !lessonSnapshot.hasData) {
-                        return const Center(child: Text('Error fetching lessons'));
+                        return const Center(
+                            child: Text('Error fetching lessons'));
                       }
 
                       final lessonDocs = lessonSnapshot.data!.docs;
@@ -466,20 +481,26 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                         itemCount: _filteredLessons.length,
                         itemBuilder: (context, index) {
                           final lessonDoc = _filteredLessons[index];
-                          final lessonData = lessonDoc.data() as Map<String, dynamic>;
+                          final lessonData =
+                              lessonDoc.data() as Map<String, dynamic>;
                           final teacherId = lessonData['teacherId'];
                           final lessonDocId = lessonDoc.id;
-                          final currentStudentCount = (lessonData['currentStudentCount'] as int?) ?? 0;
+                          final currentStudentCount =
+                              (lessonData['currentStudentCount'] as int?) ?? 0;
 
                           return FutureBuilder<DocumentSnapshot>(
-                            future: FirebaseFirestore.instance.collection('users').doc(teacherId).get(),
+                            future: FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(teacherId)
+                                .get(),
                             builder: (context, teacherSnapshot) {
                               if (!mounted) return const SizedBox.shrink();
 
-                              if (teacherSnapshot.connectionState == ConnectionState.waiting) {
+                              if (teacherSnapshot.connectionState ==
+                                  ConnectionState.waiting) {
                                 return const Center(
                                   child: CircularProgressIndicator(
-                                     color:  Color(0xff1B1212),
+                                    color: Color(0xff1B1212),
                                     backgroundColor: Colors.white,
                                     strokeWidth: 4,
                                     padding: EdgeInsets.all(20),
@@ -487,15 +508,22 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                 );
                               }
 
-                              if (teacherSnapshot.hasError || !teacherSnapshot.hasData) {
-                                return const Center(child: Text('Error fetching teacher data'));
+                              if (teacherSnapshot.hasError ||
+                                  !teacherSnapshot.hasData) {
+                                return const Center(
+                                    child: Text('Error fetching teacher data'));
                               }
 
-                              final teacher = teacherSnapshot.data!.data() as Map<String, dynamic>?;
+                              final teacher = teacherSnapshot.data!.data()
+                                  as Map<String, dynamic>?;
                               final teacherRole = teacher?['role'] ?? 'student';
-                              final teacherName = teacher?['name'] ?? 'Unknown Teacher';
+                              final teacherName =
+                                  teacher?['name'] ?? 'Unknown Teacher';
                               final teacherSurname = teacher?['surname'] ?? '';
-                              final teacherPhoto = teacher?['profileImageUrl'] ?? teacher?['profileImage'] ?? '';
+                              final teacherPhoto =
+                                  teacher?['profileImageUrl'] ??
+                                      teacher?['profileImage'] ??
+                                      '';
 
                               String displayName = teacherRole == 'teacher'
                                   ? '$teacherName $teacherSurname'
@@ -515,7 +543,8 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                   ],
                                 ),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     InkWell(
                                       onTap: () {
@@ -527,7 +556,8 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                               animation,
                                               secondaryAnimation,
                                             ) =>
-                                                AllUsersProfile(userId: teacherId),
+                                                AllUsersProfile(
+                                                    userId: teacherId),
                                             transitionsBuilder: (
                                               context,
                                               animation,
@@ -557,7 +587,8 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                         );
                                       },
                                       child: Padding(
-                                        padding: const EdgeInsets.only(left: 10, top: 5),
+                                        padding: const EdgeInsets.only(
+                                            left: 10, top: 5),
                                         child: Row(
                                           children: [
                                             StreamBuilder<DocumentSnapshot>(
@@ -569,45 +600,65 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                                 if (!mounted) {
                                                   return CircleAvatar(
                                                     radius: 25,
-                                                    backgroundColor: Colors.grey[100],
-                                                    child: Icon(Icons.person, color: Colors.white),
+                                                    backgroundColor:
+                                                        Colors.grey[100],
+                                                    child: Icon(Icons.person,
+                                                        color: Colors.white),
                                                   );
                                                 }
 
-                                                if (snapshot.hasData && snapshot.data!.exists) {
-                                                  final userData = snapshot.data!.data() as Map<String, dynamic>;
-                                                  final imageUrl = userData['profileImageUrl'] ?? userData['profileImage'] ?? '';
+                                                if (snapshot.hasData &&
+                                                    snapshot.data!.exists) {
+                                                  final userData = snapshot
+                                                          .data!
+                                                          .data()
+                                                      as Map<String, dynamic>;
+                                                  final imageUrl = userData[
+                                                          'profileImageUrl'] ??
+                                                      userData[
+                                                          'profileImage'] ??
+                                                      '';
 
                                                   if (imageUrl.isNotEmpty) {
                                                     return CircleAvatar(
                                                       radius: 25,
+                                                      backgroundColor:
+                                                          Colors.grey,
                                                       child: ClipOval(
                                                         child: Image.network(
                                                           imageUrl,
                                                           width: 50,
                                                           height: 50,
                                                           fit: BoxFit.cover,
-                                                          errorBuilder: (context, error, stackTrace) {
-                                                            print('Error loading image for user $teacherId: $error');
-                                                            return Icon(Icons.person, color: Colors.white);
+                                                          errorBuilder:
+                                                              (context, error,
+                                                                  stackTrace) {
+                                                            print(
+                                                                'Error loading image for user $teacherId: $error');
+                                                            return Icon(
+                                                                Icons.person,
+                                                                color: Colors
+                                                                    .white);
                                                           },
                                                         ),
                                                       ),
-                                                      backgroundColor: Colors.grey,
                                                     );
                                                   }
                                                 }
 
                                                 return CircleAvatar(
                                                   radius: 25,
-                                                  backgroundColor: Colors.grey[100],
-                                                  child: Icon(Icons.person, color: Colors.white),
+                                                  backgroundColor:
+                                                      Colors.grey[100],
+                                                  child: Icon(Icons.person,
+                                                      color: Colors.white),
                                                 );
                                               },
                                             ),
                                             const SizedBox(width: 10),
                                             Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   displayName,
@@ -619,12 +670,16 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                                 ),
                                                 Row(
                                                   children: [
-                                                    Icon(Icons.star, color: Colors.yellow[700]),
+                                                    Icon(Icons.star,
+                                                        color:
+                                                            Colors.yellow[700]),
                                                     Text(
-                                                      _teacherRating!.toStringAsFixed(1),
+                                                      _teacherRating
+                                                          .toStringAsFixed(1),
                                                       style: const TextStyle(
                                                         fontSize: 16,
-                                                        color: Color(0xff1B1212),
+                                                        color:
+                                                            Color(0xff1B1212),
                                                       ),
                                                     ),
                                                   ],
@@ -636,15 +691,19 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                       ),
                                     ),
                                     Padding(
-                                      padding: const EdgeInsets.only(left: 10, right: 10, top: 10),
+                                      padding: const EdgeInsets.only(
+                                          left: 10, right: 10, top: 10),
                                       child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                lessonData['speakLevel'] ?? 'N/A',
+                                                lessonData['speakLevel'] ??
+                                                    'N/A',
                                                 style: const TextStyle(
                                                   fontSize: 20,
                                                   color: Color(0xff1B1212),
@@ -658,18 +717,27 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                               onPressed: () {
                                                 showDialog(
                                                   context: context,
-                                                  builder: (context) => AlertDialog(
-                                                    backgroundColor: Colors.white,
-                                                    title: const Text('Confirm Lesson',
-                                                        style: TextStyle(color: Colors.blue)),
+                                                  builder: (context) =>
+                                                      AlertDialog(
+                                                    backgroundColor:
+                                                        Colors.white,
+                                                    title: const Text(
+                                                        'Confirm Lesson',
+                                                        style: TextStyle(
+                                                            color:
+                                                                Colors.blue)),
                                                     content: const Text(
                                                       'Derse katılacağınıza emin misiniz? Satın aldiktan sonra katılımınız iptal edilemez',
-                                                      style: TextStyle(fontSize: 20),
+                                                      style: TextStyle(
+                                                          fontSize: 20),
                                                     ),
                                                     actions: [
                                                       TextButton(
-                                                        onPressed: () => Navigator.pop(context),
-                                                        child: const Text('Onaylamiyorum',
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                                context),
+                                                        child: const Text(
+                                                            'Onaylamiyorum',
                                                             style: TextStyle(
                                                               color: Colors.red,
                                                               fontSize: 17,
@@ -677,57 +745,295 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                                       ),
                                                       TextButton(
                                                         onPressed: () async {
-                                                          Navigator.of(context).pop();
+                                                          showModalBottomSheet(
+                                                            context: context,
+                                                            shape:
+                                                                const RoundedRectangleBorder(
+                                                              borderRadius:
+                                                                  BorderRadius.vertical(
+                                                                      top: Radius
+                                                                          .circular(
+                                                                              20)),
+                                                            ),
+                                                            isScrollControlled:
+                                                                true,
+                                                            builder: (context) {
+                                                              bool saveCard =
+                                                                  true;
+                                                              final cardNumberController =
+                                                                  TextEditingController();
+                                                              final expiryDateController =
+                                                                  TextEditingController();
+                                                              final cvcController =
+                                                                  TextEditingController();
+                                                              bool isFormValid =
+                                                                  false;
 
-                                                          try {
-                                                            final paymentSuccess =
-                                                                await StripeService.instance.makePayment(180);
+                                                              void
+                                                                  validateForm() {
+                                                                final cleanCardNumber =
+                                                                    cardNumberController
+                                                                        .text
+                                                                        .replaceAll(
+                                                                            RegExp(r'\s+'),
+                                                                            '');
+                                                                final cardNumberValid =
+                                                                    cleanCardNumber
+                                                                            .length ==
+                                                                        16;
+                                                                final expiryValid =
+                                                                    expiryDateController
+                                                                            .text
+                                                                            .length ==
+                                                                        5;
+                                                                final cvcValid =
+                                                                    cvcController
+                                                                            .text
+                                                                            .length ==
+                                                                        3;
+                                                                isFormValid =
+                                                                    cardNumberValid &&
+                                                                        expiryValid &&
+                                                                        cvcValid;
+                                                              }
 
-                                                            if (paymentSuccess) {
-                                                              await _joinLesson(lessonDocId, context);
-                                                              if (context.mounted) {
-                                                                setState(() {
-                                                                  _filteredLessons.removeWhere(
-                                                                      (doc) => doc.id == lessonDocId);
-                                                                });
-                                                                await removeLesson(index);
-                                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                                  const SnackBar(
-                                                                    behavior: SnackBarBehavior.floating,
-                                                                    backgroundColor: Colors.green,
-                                                                    content: Text('Payment and lesson join successful!'),
-                                                                  ),
-                                                                );
-                                                              }
-                                                            } else {
-                                                              if (context.mounted) {
-                                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                                  const SnackBar(
-                                                                    behavior: SnackBarBehavior.floating,
-                                                                    backgroundColor: Colors.red,
-                                                                    content:
-                                                                        Text('Payment failed or cancelled'),
-                                                                  ),
-                                                                );
-                                                              }
-                                                            }
-                                                          } catch (e) {
-                                                            if (context.mounted) {
-                                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                                SnackBar(
-                                                                  behavior: SnackBarBehavior.floating,
-                                                                  backgroundColor: Colors.red,
-                                                                  content: Text('Error: ${e.toString()}'),
-                                                                ),
+                                                              return StatefulBuilder(
+                                                                builder: (context,
+                                                                    setState) {
+                                                                  return Padding(
+                                                                    padding:
+                                                                        EdgeInsets
+                                                                            .only(
+                                                                      bottom: MediaQuery.of(
+                                                                              context)
+                                                                          .viewInsets
+                                                                          .bottom,
+                                                                      left: 20,
+                                                                      right: 20,
+                                                                      top: 20,
+                                                                    ),
+                                                                    child:
+                                                                        SingleChildScrollView(
+                                                                      child:
+                                                                          Column(
+                                                                        mainAxisSize:
+                                                                            MainAxisSize.min,
+                                                                        crossAxisAlignment:
+                                                                            CrossAxisAlignment.start,
+                                                                        children: [
+                                                                          Center(
+                                                                            child:
+                                                                                Container(
+                                                                              width: 50,
+                                                                              height: 5,
+                                                                              decoration: BoxDecoration(
+                                                                                color: Colors.grey[300],
+                                                                                borderRadius: BorderRadius.circular(10),
+                                                                              ),
+                                                                            ),
+                                                                          ),
+                                                                          const SizedBox(
+                                                                              height: 20),
+                                                                          const Center(
+                                                                            child:
+                                                                                Text(
+                                                                              'Add a card',
+                                                                              style: TextStyle(
+                                                                                fontSize: 18,
+                                                                                fontWeight: FontWeight.bold,
+                                                                                color: Color(0xff1B1212),
+                                                                              ),
+                                                                            ),
+                                                                          ),
+                                                                          const SizedBox(
+                                                                              height: 20),
+                                                                          TextFormField(
+                                                                            controller:
+                                                                                cardNumberController,
+                                                                            decoration:
+                                                                                InputDecoration(
+                                                                              labelText: 'Card number',
+                                                                              hintText: 'XXXX XXXX XXXX XXXX',
+                                                                              labelStyle: TextStyle(
+                                                                                color: Color(0xff1B1212),
+                                                                              ),
+                                                                              hintStyle: TextStyle(
+                                                                                color: Color(0xff1B1212),
+                                                                              ),
+                                                                              suffixIcon: Row(
+                                                                                mainAxisSize: MainAxisSize.min,
+                                                                                children: [
+                                                                                  Image.asset('assets/images/visa.png', height: 24),
+                                                                                  Image.asset('assets/images/mastercard.png', height: 24),
+                                                                                ],
+                                                                              ),
+                                                                              border: OutlineInputBorder(
+                                                                                borderRadius: BorderRadius.circular(10),
+                                                                              ),
+                                                                            ),
+                                                                            keyboardType:
+                                                                                TextInputType.number,
+                                                                            inputFormatters: [
+                                                                              FilteringTextInputFormatter.digitsOnly,
+                                                                              LengthLimitingTextInputFormatter(16),
+                                                                              CardNumberInputFormatter(), // Custom formatter to show space every 4 digits
+                                                                            ],
+                                                                            onChanged:
+                                                                                (_) {
+                                                                              setState(() {
+                                                                                validateForm();
+                                                                              });
+                                                                            },
+                                                                          ),
+                                                                          const SizedBox(
+                                                                              height: 15),
+                                                                          Row(
+                                                                            children: [
+                                                                              Expanded(
+                                                                                child: TextFormField(
+                                                                                  controller: expiryDateController,
+                                                                                  decoration: InputDecoration(
+                                                                                    labelStyle: TextStyle(
+                                                                                      color: Color(0xff1B1212),
+                                                                                    ),
+                                                                                    hintStyle: TextStyle(
+                                                                                      color: Color(0xff1B1212),
+                                                                                    ),
+                                                                                    labelText: 'MM / YY',
+                                                                                    hintText: 'MM / YY',
+                                                                                    border: OutlineInputBorder(
+                                                                                      borderRadius: BorderRadius.circular(10),
+                                                                                    ),
+                                                                                  ),
+                                                                                  keyboardType: TextInputType.number,
+                                                                                  inputFormatters: [
+                                                                                    LengthLimitingTextInputFormatter(5),
+                                                                                    ExpiryDateInputFormatter(),
+                                                                                  ],
+                                                                                  onChanged: (_) {
+                                                                                    setState(() {
+                                                                                      validateForm();
+                                                                                    });
+                                                                                  },
+                                                                                ),
+                                                                              ),
+                                                                              const SizedBox(width: 10),
+                                                                              Expanded(
+                                                                                child: TextFormField(
+                                                                                  controller: cvcController,
+                                                                                  decoration: InputDecoration(
+                                                                                    labelStyle: TextStyle(
+                                                                                      color: Color(0xff1B1212),
+                                                                                    ),
+                                                                                    hintStyle: TextStyle(
+                                                                                      color: Color(0xff1B1212),
+                                                                                    ),
+                                                                                    labelText: 'CVC',
+                                                                                    hintText: 'CVC',
+                                                                                    border: OutlineInputBorder(
+                                                                                      borderRadius: BorderRadius.circular(10),
+                                                                                    ),
+                                                                                  ),
+                                                                                  keyboardType: TextInputType.number,
+                                                                                  inputFormatters: [
+                                                                                    FilteringTextInputFormatter.digitsOnly,
+                                                                                    LengthLimitingTextInputFormatter(3),
+                                                                                  ],
+                                                                                  onChanged: (_) {
+                                                                                    setState(() {
+                                                                                      validateForm();
+                                                                                    });
+                                                                                  },
+                                                                                ),
+                                                                              ),
+                                                                            ],
+                                                                          ),
+                                                                          const SizedBox(
+                                                                              height: 15),
+                                                                          Row(
+                                                                            children: [
+                                                                              Checkbox(
+                                                                                activeColor: Color(0xff1B1212),
+                                                                                value: saveCard,
+                                                                                onChanged: (v) {
+                                                                                  setState(() {
+                                                                                    saveCard = v ?? false;
+                                                                                  });
+                                                                                },
+                                                                              ),
+                                                                              const Text('Save card for future payments'),
+                                                                            ],
+                                                                          ),
+                                                                          const SizedBox(
+                                                                              height: 20),
+                                                                          ElevatedButton(
+                                                                            style:
+                                                                                ElevatedButton.styleFrom(
+                                                                              minimumSize: const Size.fromHeight(50),
+                                                                              backgroundColor: isFormValid ? Color(0xff1B1212) : Colors.grey,
+                                                                              shape: RoundedRectangleBorder(
+                                                                                borderRadius: BorderRadius.circular(10),
+                                                                              ),
+                                                                            ),
+                                                                            onPressed: isFormValid
+                                                                                ? () async {
+                                                                                    if (!isFormValid) return;
+
+                                                                                    final cleanCardNumber = cardNumberController.text.replaceAll(' ', '');
+                                                                                    final expiryParts = expiryDateController.text.split('/');
+                                                                                    final expMonth = expiryParts[0];
+                                                                                    final expYear = '5${expiryParts[1]}'; // Assuming 'YY' format
+
+                                                                                   // Trigger the payment call using your service
+                                                                                    final success = await NestpayPaymentService.instance.makePayment(
+                                                                                      amount: 180,
+                                                                                      number: cleanCardNumber,
+                                                                                      expMonth: expMonth,
+                                                                                      expYear: expYear,
+                                                                                      cvv: cvcController.text,
+                                                                                      email: 'useremail@example.com',
+                                                                                      name: 'Full Name',
+                                                                                    );
+                                                                               
+                                                                                                                                                                         
+
+                                                                                    if (success) {
+                                                                                      print('✅ Payment Success');
+                                                                                      Navigator.pop(context);
+                                                                                    } else {
+                                                                                      print('❌ Payment Failed');
+                                                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                                                        const SnackBar(content: Text('Payment failed, please try again.')),
+                                                                                      );
+                                                                                    
+                                                                                    }
+                                                                                    // ✅ Trigger payment function here
+                                                                                  }
+                                                                                : null,
+                                                                            child:
+                                                                                const Text(
+                                                                              'Add',
+                                                                              style: TextStyle(color: Colors.white, fontSize: 16),
+                                                                            ),
+                                                                          ),
+                                                                          const SizedBox(
+                                                                              height: 20),
+                                                                        ],
+                                                                      ),
+                                                                    ),
+                                                                  );
+                                                                },
                                                               );
-                                                            }
-                                                          }
+                                                            },
+                                                          );
                                                         },
-                                                        child: const Text('Onaylıyorum',
-                                                            style: TextStyle(
-                                                              color: Colors.blue,
-                                                              fontSize: 17,
-                                                            )),
+                                                        child: const Text(
+                                                          'Onaylıyorum',
+                                                          style: TextStyle(
+                                                            color: Colors.blue,
+                                                            fontSize: 17,
+                                                          ),
+                                                        ),
                                                       ),
                                                     ],
                                                   ),
@@ -745,16 +1051,21 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                       ),
                                     ),
                                     Padding(
-                                      padding: const EdgeInsets.only(right: 20, left: 10),
+                                      padding: const EdgeInsets.only(
+                                          right: 20, left: 10),
                                       child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
                                               Text(
-                                                DateFormat('yyyy/MM/dd hh:mm a').format(
-                                                  _parseDateTime(lessonData['dateTime']),
+                                                DateFormat('yyyy/MM/dd hh:mm a')
+                                                    .format(
+                                                  _parseDateTime(
+                                                      lessonData['dateTime']),
                                                 ),
                                                 style: const TextStyle(
                                                   color: Color(0xff1B1212),
@@ -776,7 +1087,8 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
                                     Padding(
                                       padding: const EdgeInsets.all(10.0),
                                       child: Text(
-                                        lessonData['description'] ?? 'No description available.',
+                                        lessonData['description'] ??
+                                            'No description available.',
                                         style: const TextStyle(
                                           color: Color(0xff1B1212),
                                           fontWeight: FontWeight.bold,
@@ -799,16 +1111,15 @@ class _SearchStudentState extends ConsumerState<SearchStudent> {
 
 List<String> waycoffes = ['1', '2', '5', '10'];
 
-
 class AlertDialogRating extends StatefulWidget {
   final String teacherId;
   final Function(double) onRatingSubmitted;
 
   const AlertDialogRating({
-    Key? key,
+    super.key,
     required this.teacherId,
     required this.onRatingSubmitted,
-  }) : super(key: key);
+  });
 
   @override
   _AlertDialogRatingState createState() => _AlertDialogRatingState();
@@ -847,7 +1158,8 @@ class _AlertDialogRatingState extends State<AlertDialogRating> {
           final averageRating = totalRating / ratingCount;
           if (mounted) {
             setState(() {
-              _rating = averageRating.clamp(1.0, 5.0); // Ensure rating is within valid range
+              _rating = averageRating.clamp(
+                  1.0, 5.0); // Ensure rating is within valid range
               _isLoading = false;
             });
           }
@@ -885,13 +1197,19 @@ class _AlertDialogRatingState extends State<AlertDialogRating> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: Colors.white,
-      title: const Text('Rate Teacher',
-          style: TextStyle(color: Color(0xff1B1212),),),
+      title: const Text(
+        'Rate Teacher',
+        style: TextStyle(
+          color: Color(0xff1B1212),
+        ),
+      ),
       content: _isLoading
-          ? const Center(child: CircularProgressIndicator(
-             color:  Color(0xff1B1212),
-            backgroundColor: Colors.white,
-          ),)
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xff1B1212),
+                backgroundColor: Colors.white,
+              ),
+            )
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -934,6 +1252,97 @@ class _AlertDialogRatingState extends State<AlertDialogRating> {
               style: TextStyle(color: Color(0xff1B1212))),
         ),
       ],
+    );
+  }
+}
+
+// here will enter the card information first one
+// class CardNumberInputFormatter extends TextInputFormatter {
+//   @override
+//   TextEditingValue formatEditUpdate(
+//       TextEditingValue oldValue, TextEditingValue newValue) {
+//     String text = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+
+//     // Limit to 16 digits (standard card number length)
+//     if (text.length > 16) {
+//       text = text.substring(0, 16);
+//     }
+
+//     // Add spaces after every 4 digits
+//     StringBuffer formatted = StringBuffer();
+//     for (int i = 0; i < text.length; i++) {
+//       if (i > 0 && i % 4 == 0) {
+//         formatted.write(' ');
+//       }
+//       formatted.write(text[i]);
+//     }
+
+//     // Calculate new cursor position
+//     String formattedText = formatted.toString();
+//     int cursorOffset = newValue.selection.baseOffset;
+
+//     String inputUpToCursor =
+//         newValue.text.substring(0, cursorOffset.clamp(0, newValue.text.length));
+//     int digitsBeforeCursor =
+//         inputUpToCursor.replaceAll(RegExp(r'[^0-9]'), '').length;
+
+//     int newCursorPosition = 0;
+//     int digitCount = 0;
+//     for (int i = 0;
+//         i < formattedText.length && digitCount < digitsBeforeCursor;
+//         i++) {
+//       if (RegExp(r'[0-9]').hasMatch(formattedText[i])) {
+//         digitCount++;
+//       }
+//       newCursorPosition = i + 1;
+//     }
+
+//     newCursorPosition = newCursorPosition.clamp(0, formattedText.length);
+
+//     return TextEditingValue(
+//       text: formattedText,
+//       selection: TextSelection.collapsed(offset: newCursorPosition),
+//     );
+//   }
+// }
+// For Card number (already done)
+class CardNumberInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    String text = newValue.text.replaceAll(RegExp(r'\D'), '');
+    String newText = '';
+    for (int i = 0; i < text.length; i++) {
+      if (i != 0 && i % 4 == 0) {
+        newText += ' ';
+      }
+      newText += text[i];
+    }
+    return TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+    );
+  }
+}
+
+// For MM/YY format
+class ExpiryDateInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    String text = newValue.text.replaceAll(RegExp(r'\D'), '');
+    String newText = '';
+    if (text.length >= 2) {
+      newText = text.substring(0, 2);
+      if (text.length > 2) {
+        newText += '/${text.substring(2, text.length.clamp(2, 4))}';
+      }
+    } else {
+      newText = text;
+    }
+    return TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
     );
   }
 }

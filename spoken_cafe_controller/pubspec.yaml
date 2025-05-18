@@ -38,13 +38,27 @@ dependencies:
   file_picker: ^10.0.0
   firebase_auth: ^5.5.2
   firebase_core: ^3.13.0
+  video_player: ^2.9.5
   cloud_firestore: ^5.6.6
   intl: ^0.20.2
+  dio: ^5.8.0+1
+  permission_handler: ^12.0.0+1
+  path_provider: ^2.1.5
   firebase_database: ^11.3.5
+  firebase_storage: ^12.4.5
+  carousel_slider: ^5.0.0
+  
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.3
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/spken_cafe_control.png"
+  
 
   flutter_lints: ^5.0.0
 

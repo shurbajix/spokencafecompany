@@ -37,6 +37,7 @@ class _HomeState extends State<Home> {
       // Mobile: Use BottomNavigationBar
       return Scaffold(
         appBar: AppBar(
+          leading:  Padding(padding: EdgeInsets.all(10),child:  Image.asset('assets/images/spken_cafe_control.png',scale: 4.9,),),
           title: const Text('Spoken Cafe Control'),
           centerTitle: true,
         ),

@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      // Allow all reads and writes for authenticated users
+      allow read, write: if request.auth != null;
+      // OR allow all reads and writes for everyone (use with extreme caution)
+      // allow read, write: if true;
+    }
+  }
+}
+// rules_version = '2';
+// service cloud.firestore {
+//   match /databases/{database}/documents {
+
+//     // ✅ Function to check if user is an admin
+//     function isAdmin() {
+//       return request.auth != null && (
+//         // Allow if user exists in the 'admins' collection
+//         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+//         // OR allow if email is a hardcoded admin (like spoken@cafe.com)
+//         request.auth.token.email == 'spoken@cafe.com'
+//       );
+//     }
+
+//     // ✅ Function to check if user is a super admin
+//     function isSuperAdmin() {
+//       return request.auth != null &&
+//              exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+//              get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'superAdmin';
+//     }
+
+//     // ✅ Rules for the 'lessons' collection
+//     match /lessons/{lessonId} {
+//       // Allow teacher or admin to get a lesson
+//       allow get: if request.auth != null &&
+//                  (request.auth.uid == resource.data.teacherId || isAdmin());
+
+//       // Allow any authenticated user to list lessons
+//       allow list: if request.auth != null;
+
+//       // Allow teacher or admin to create
+//       allow create: if request.auth != null &&
+//                     (request.auth.uid == request.resource.data.teacherId || isAdmin());
+
+//       // Allow teacher or admin to update/delete
+//       allow update, delete: if request.auth != null &&
+//                             (request.auth.uid == resource.data.teacherId || isAdmin());
+//     }
+
+//     // ✅ Rules for the 'admins' collection - super admins only
+//     match /admins/{adminId} {
+//       allow read, write: if isSuperAdmin();
+//     }
+
+//     // ✅ Global fallback rule (apply to all other documents)
+//     match /{document=**} {
+//       // Allow reads for all users, or allow if isAdmin
+//       allow read: if request.auth != null || isAdmin();
+
+//       // Allow writes for authenticated users or admins
+//       allow write: if request.auth != null || isAdmin();
+//     }
+//   }
+// }
+

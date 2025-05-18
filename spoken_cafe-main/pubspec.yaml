@@ -60,11 +60,9 @@ dependencies:
   google_sign_in: ^6.2.2
   google_sign_in_ios:
   rating_summary: ^1.0.3+1
-  flutter_stripe: ^11.0.0
-  # add new stripe for ios
-  stripe_ios:
+
   awesome_dialog: ^3.2.1
-# geocoding plugin for map and else
+  # geocoding plugin for map and else
   geocoding: ^3.0.0
   location: ^8.0.0
   flutter_svg: ^2.0.16
@@ -74,13 +72,12 @@ dependencies:
   flutter_dotenv: ^5.2.1
   # add new plugin for test
   custom_refresh_indicator: ^4.0.1
-  # here i will add the flutter map to make flutter map work perfect 
+  # here i will add the flutter map to make flutter map work perfect
   # this for appcheck firebase
   firebase_app_check: ^0.3.2+5
   # this start here to add mapbox and remove google map step by step
   #mapbox_gl: ^0.16.0
-  
-  
+
   firebase_core: ^3.12.1
   cloud_firestore: ^5.6.5
   firebase_auth: ^5.5.1
@@ -95,39 +92,35 @@ dependencies:
   mime: ^2.0.0
   # here i will add firebase analytics
   firebase_analytics: ^11.4.5
-  # here will add url luncher 
+  # this will upload cloud function
+  cloud_functions: ^5.5.0
+  # here will add url luncher
   url_launcher: ^6.3.1
   #i will use  latlong2 for latlaong free version and unlimted
-  latlng: ^2.0.7  
-  # this for google map let's try it 
+  latlng: ^2.0.7
+  # this for google map let's try it
   google_maps_flutter: ^2.12.1
   # for payloint the flutter
   flutter_polyline_points: ^2.1.0
   # for walking location
   vector_math:
-  # this for refresh the lodaing image fast 
+  # this for refresh the lodaing image fast
   cached_network_image: ^3.4.1
-  # mapbox navigation step by step
-  #flutter_mapbox_navigation:
-  #mapbox mapbox_gl
-  #mapbox_gl:
-  #mapbox search 
-  #mapbox_search: ^4.3.1
-  # general mapbox for map
-  #mapbox_maps_flutter:
-  # flutter_typeahead 
+  # this here cached video
+  # caech manager files from firebase fast
+  flutter_cache_manager: ^3.4.1
+
   flutter_typeahead: ^5.2.0
-  # this will change the image icon inside flutter app when run 
+  # this will change the image icon inside flutter app when run
   flutter_launcher_icons:
   # spalsh screen native plugin for splash move
   flutter_native_splash:
   latlong2: ^0.9.1
-  # stripe payemnt to edit and make it work 
+  # stripe payemnt to edit and make it work
   stripe_sdk: ^5.0.0
-  
+
   flutter_lints: ^5.0.0
-  
-  
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -135,14 +128,11 @@ dev_dependencies:
 flutter_icons:
   android: true
   ios: true
-  image_path: 'assets/spoken_cafe.png'
+  image_path: "assets/spoken_cafe.png"
 
 flutter_native_splash:
-    color: "FFFFFF"
-    image: assets/spoken_cafe.png
-
-
-  
+  color: "FFFFFF"
+  image: assets/spoken_cafe.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

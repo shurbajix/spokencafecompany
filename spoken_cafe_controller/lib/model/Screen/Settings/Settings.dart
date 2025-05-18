@@ -16,7 +16,8 @@ class _SettingsState extends State<Settings> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Image.asset('assets/images/spken_cafe.png', width: 100, height: 100),
+          Image.asset('assets/images/spken_cafe_control.png', width: 100, height: 100),
+           //Image.asset('assets/images/spken_cafe_control.png',scale: 4.9,),
           Column(
             spacing: 20,
             children: [

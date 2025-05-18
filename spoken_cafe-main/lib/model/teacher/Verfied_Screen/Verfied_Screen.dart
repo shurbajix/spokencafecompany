@@ -1,7 +1,10 @@
+
 import 'dart:io';
 
 import 'package:blurrycontainer/blurrycontainer.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,57 +18,141 @@ class VerfiedScreen extends ConsumerStatefulWidget {
 }
 
 class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
-  File? _isSelctedUpdate;
-  bool _isDescriptionFilled = false;
-
-  final TextEditingController _descriptionControll = TextEditingController();
   File? _selectedImage;
+  File? _selectedVideo;
+  final TextEditingController _descriptionControll =
+      TextEditingController();
   final ImagePicker _picker = ImagePicker();
   bool _isImageSelected = false;
-  File? _selectedVideo;
   bool _isVideoSelected = false;
-  bool _isFirstUploadDone = false; // Track if the first upload is done
-  bool _isSecondUploadDone = false;
+  bool _isDescriptionFilled = false;
+  bool _isSubmitting = false;
 
   Future<void> pickVideo() async {
     try {
-      FilePickerResult? result =
-          await FilePicker.platform.pickFiles(type: FileType.video);
-      if (result != null) {
+      final pickedFile =
+          await _picker.pickVideo(source: ImageSource.gallery);
+      if (pickedFile != null) {
         setState(() {
-          _selectedVideo = File(result.files.single.path!);
+          _selectedVideo = File(pickedFile.path);
           _isVideoSelected = true;
-          _isFirstUploadDone = true; // Mark first upload as done
         });
-        print('Selected video path: ${result.files.single.path}');
-      } else {
-        print('No video selected.');
       }
     } catch (e) {
       print('Error picking video: $e');
+      _showSnackBar('Error picking video: $e', Colors.red);
     }
   }
 
-  Future<void> pickeImage() async {
+  Future<void> pickImage() async {
     try {
-      final PickedFile = await _picker.pickImage(source: ImageSource.gallery);
-      if (PickedFile != null) {
+      final pickedFile =
+          await _picker.pickImage(source: ImageSource.gallery);
+      if (pickedFile != null) {
         setState(() {
-          _selectedImage = File(PickedFile.path);
+          _selectedImage = File(pickedFile.path);
           _isImageSelected = true;
-          _isSecondUploadDone = true; // Mark first upload as done
         });
-        print('Selected image path: ${PickedFile.path}');
-      } else {
-        print('No image selected.');
       }
     } catch (e) {
       print('Error picking image: $e');
+      _showSnackBar('Error picking image: $e', Colors.red);
+    }
+  }
+
+  Future<String?> _uploadFile(File file, String folder) async {
+    try {
+      String fileName =
+          '${DateTime.now().millisecondsSinceEpoch}.${folder == 'verification_videos' ? 'mp4' : 'jpg'}';
+      Reference ref = FirebaseStorage.instance
+          .ref()
+          .child("$folder/${FirebaseAuth.instance.currentUser!.uid}/$fileName");
+      UploadTask uploadTask = ref.putFile(file);
+      TaskSnapshot snapshot = await uploadTask;
+      return await snapshot.ref.getDownloadURL();
+    } catch (e) {
+      print('Upload error: $e');
+      return null;
+    }
+  }
+
+  Future<void> _submitVerification() async {
+    if (!isSaveEnabled) {
+      _showSnackBar('Please complete all required fields', Colors.red);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _showSnackBar('User not authenticated', Colors.red);
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
+      String? videoUrl = _selectedVideo != null
+          ? await _uploadFile(_selectedVideo!, 'verification_videos')
+          : null;
+      String? imageUrl = _selectedImage != null
+          ? await _uploadFile(_selectedImage!, 'verification_documents')
+          : null;
+
+      if (videoUrl == null || imageUrl == null) {
+        _showSnackBar('Error uploading files', Colors.red);
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({
+        'verificationVideo': videoUrl,
+        'verificationDocument': imageUrl,
+        'verificationDescription': _descriptionControll.text.trim(),
+        'isVerified': false,
+        'verificationSubmittedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await FirebaseFirestore.instance.collection('media').add({
+        'userId': user.uid,
+        'url': videoUrl,
+        'type': 'video',
+        'description': _descriptionControll.text.trim(),
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      _showSnackBar(
+          'Verification submitted. Awaiting admin approval.', Colors.green);
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const Navbar()),
+        );
+      }
+    } catch (e) {
+      print('Submission error: $e');
+      _showSnackBar('Error submitting verification: $e', Colors.red);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   bool get isSaveEnabled =>
       _isVideoSelected && _isImageSelected && _isDescriptionFilled;
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        content: Text(message),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -76,46 +163,41 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      bottomSheet: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 25),
-        child: SizedBox(
-          height: 60,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                height: 45,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        isSaveEnabled ? const Color(0xff3D5CFF) : Colors.grey,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const Navbar(),
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    'Save',
-                    style: TextStyle(color: Colors.white, fontSize: 25),
+      bottomSheet: SizedBox(
+        height: 60,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 45,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isSaveEnabled && !_isSubmitting
+                      ? const Color(0xff3D5CFF)
+                      : Colors.grey,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
+                onPressed: isSaveEnabled && !_isSubmitting
+                    ? _submitVerification
+                    : null,
+                child: _isSubmitting
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'Submit',
+                        style: TextStyle(color: Colors.white, fontSize: 25),
+                      ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       appBar: AppBar(
         automaticallyImplyLeading: false,
         centerTitle: true,
         title: const Text(
-          'Verfied Page',
+          'Verification Page',
           style: TextStyle(color: Colors.black, fontSize: 30),
         ),
       ),
@@ -145,10 +227,16 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                     color: Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                     child: Center(
-                      child: IconButton(
-                        onPressed: pickVideo,
-                        icon: const Icon(Icons.add, size: 80),
-                      ),
+                      child: _selectedVideo == null
+                          ? IconButton(
+                              onPressed: _isSubmitting ? null : pickVideo,
+                              icon: const Icon(Icons.add, size: 80),
+                            )
+                          : const Text(
+                              'Video Selected',
+                              style:
+                                  TextStyle(fontSize: 16, color: Colors.black),
+                            ),
                     ),
                   ),
                   if (_selectedVideo != null)
@@ -156,8 +244,8 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                       padding: const EdgeInsets.all(8.0),
                       child: Text(
                         'Selected Video: ${_selectedVideo!.path.split('/').last}',
-                        style:
-                            const TextStyle(fontSize: 16, color: Colors.black),
+                        style: const TextStyle(
+                            fontSize: 16, color: Colors.black),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -168,13 +256,14 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                         padding: const EdgeInsets.all(8.0),
                         child: Icon(
                           Icons.verified,
-                          color: _isVideoSelected ? Colors.green : Colors.black,
+                          color:
+                              _isVideoSelected ? Colors.green : Colors.black,
                         ),
                       ),
                       Row(
                         children: [
                           IconButton(
-                            onPressed: _isFirstUploadDone ? pickVideo : null,
+                            onPressed: _isSubmitting ? null : pickVideo,
                             icon: const Icon(Icons.update),
                           ),
                           IconButton(
@@ -224,6 +313,7 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                 keyboardType: TextInputType.multiline,
                 maxLines: null,
                 controller: _descriptionControll,
+                enabled: !_isSubmitting,
                 onChanged: (value) {
                   setState(() {
                     _isDescriptionFilled = value.trim().isNotEmpty;
@@ -232,7 +322,8 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                 decoration: InputDecoration(
                   suffixIcon: Icon(
                     Icons.verified,
-                    color: _isDescriptionFilled ? Colors.green : Colors.black,
+                    color:
+                        _isDescriptionFilled ? Colors.green : Colors.black,
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -244,7 +335,7 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 7),
+            const SizedBox(height: 10),
             const Text(
               'Document',
               textAlign: TextAlign.center,
@@ -269,7 +360,7 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                     child: Center(
                       child: _selectedImage == null
                           ? IconButton(
-                              onPressed: pickeImage,
+                              onPressed: _isSubmitting ? null : pickImage,
                               icon: const Icon(Icons.add, size: 80),
                             )
                           : ClipRRect(
@@ -283,192 +374,64 @@ class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
                             ),
                     ),
                   ),
-                  // Row(
-                  //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  //   children: [
-                  //     Padding(
-                  //       padding: const EdgeInsets.all(8.0),
-                  //       child: Icon(
-                  //         Icons.verified,
-                  //         color: _isImageSelected ? Colors.green : Colors.black,
-                  //       ),
-                  //     ),
-                  //     Row(
-                  //       children: [
-                  //         IconButton(
-                  //           onPressed: _isSecondUploadDone
-                  //               ? pickeImage
-                  //               : null, // Enable update only after first upload
-                  //           icon: const Icon(Icons.update),
-                  //         ),
-                  //         IconButton(
-                  //           onPressed: () {
-                  //             showDialog(
-                  //               barrierDismissible: false,
-                  //               context: context,
-                  //               builder: (context) => AlertDialog(
-                  //                 backgroundColor: Colors.grey[200],
-                  //                 title: const Text('About Upload doucoment'),
-                  //                 contentPadding: const EdgeInsets.all(20),
-                  //                 content: const Text(
-                  //                     'upload doucoment you should upload your certifcation or upload id card and we will saw and accept'),
-                  //                 actions: [
-                  //                   TextButton(
-                  //                     onPressed: () {
-                  //                       Navigator.pop(context);
-                  //                     },
-                  //                     child: const Text(
-                  //                       'Close',
-                  //                       style: TextStyle(
-                  //                           color: Colors.black, fontSize: 20),
-                  //                     ),
-                  //                   ),
-                  //                 ],
-                  //               ),
-                  //             );
-                  //           },
-                  //           icon: const Icon(
-                  //             Icons.info,
-                  //           ),
-                  //         ),
-                  //       ],
-                  //     ),
-                  //   ],
-                  // ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Icon(
+                          Icons.verified,
+                          color:
+                              _isImageSelected ? Colors.green : Colors.black,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: _isSubmitting ? null : pickImage,
+                            icon: const Icon(Icons.update),
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              showDialog(
+                                barrierDismissible: false,
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  backgroundColor: Colors.grey[200],
+                                  title:
+                                      const Text('About Upload Document'),
+                                  contentPadding: const EdgeInsets.all(20),
+                                  content: const Text(
+                                    'Upload your certification or ID card. We will review and approve your submission.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context),
+                                      child: const Text(
+                                        'Close',
+                                        style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 20),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.info),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            SizedBox(
-              height: 90,
-            ),
+            const SizedBox(height: 90),
           ],
         ),
       ),
     );
   }
 }
-
-// import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:flutter/material.dart';
-// import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-// class VerfiedScreen extends ConsumerStatefulWidget {
-//   const VerfiedScreen({super.key});
-
-//   @override
-//   ConsumerState<VerfiedScreen> createState() => _VerfiedScreenState();
-// }
-
-// class _VerfiedScreenState extends ConsumerState<VerfiedScreen> {
-//   // File? _selectedVideo;
-//   // File? _selectedImage;
-
-//   // bool _isVideoSelected = false;
-//   // bool _isImageSelected = false;
-//   bool _isDescriptionFilled = false;
-
-//   final TextEditingController _descriptionController = TextEditingController();
-
-//   // Future<void> pickVideo() async {
-//   //   // Skipped
-//   // }
-
-//   // Future<void> pickImage() async {
-//   //   // Skipped
-//   // }
-
-//   bool get isSaveEnabled => _isDescriptionFilled;
-
-//   Future<void> submitToFirestore() async {
-//     try {
-//       await FirebaseFirestore.instance.collection('verifiedTeachers').add({
-//         'description': _descriptionController.text.trim(),
-//         'timestamp': FieldValue.serverTimestamp(),
-//       });
-
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         const SnackBar(content: Text('Description submitted to Firestore!')),
-//       );
-//     } catch (e) {
-//       print('Firestore error: $e');
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('Error: $e')),
-//       );
-//     }
-//   }
-
-//   @override
-//   void dispose() {
-//     _descriptionController.dispose();
-//     super.dispose();
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: const Text('Verified Page'),
-//         centerTitle: true,
-//       ),
-//       bottomSheet: Padding(
-//         padding: const EdgeInsets.all(20.0),
-//         child: ElevatedButton(
-//           onPressed: isSaveEnabled ? submitToFirestore : null,
-//           style: ElevatedButton.styleFrom(
-//             backgroundColor: isSaveEnabled ? Colors.blue : Colors.grey,
-//             minimumSize: const Size(double.infinity, 50),
-//           ),
-//           child: const Text('Save', style: TextStyle(fontSize: 18)),
-//         ),
-//       ),
-//       body: ListView(
-//         padding: const EdgeInsets.all(20),
-//         children: [
-//           const Text('Description', style: TextStyle(fontSize: 18)),
-//           const SizedBox(height: 10),
-//           TextField(
-//             controller: _descriptionController,
-//             maxLines: 3,
-//             decoration: InputDecoration(
-//               border: OutlineInputBorder(),
-//               hintText: 'Write about yourself...',
-//               suffixIcon: Icon(
-//                 Icons.check_circle,
-//                 color: _isDescriptionFilled ? Colors.green : Colors.grey,
-//               ),
-//             ),
-//             onChanged: (value) {
-//               setState(() {
-//                 _isDescriptionFilled = value.trim().isNotEmpty;
-//               });
-//             },
-//           ),
-//           const SizedBox(height: 100),
-
-//           // const Text('Upload Video (disabled)'),
-//           // const SizedBox(height: 10),
-//           // GestureDetector(
-//           //   onTap: null,
-//           //   child: Container(
-//           //     height: 150,
-//           //     color: Colors.grey[300],
-//           //     child: const Center(child: Icon(Icons.video_call, size: 50)),
-//           //   ),
-//           // ),
-
-//           // const SizedBox(height: 30),
-//           // const Text('Upload Image (disabled)'),
-//           // const SizedBox(height: 10),
-//           // GestureDetector(
-//           //   onTap: null,
-//           //   child: Container(
-//           //     height: 150,
-//           //     color: Colors.grey[300],
-//           //     child: const Center(child: Icon(Icons.image, size: 50)),
-//           //   ),
-//           // ),
-//         ],
-//       ),
-//     );
-//   }
-// }

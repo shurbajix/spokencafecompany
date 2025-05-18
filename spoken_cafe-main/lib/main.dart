@@ -1,18 +1,13 @@
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-
-import 'package:spokencafe/Credit_Card/Credit_key.dart';
-import 'package:spokencafe/Credit_Card/Cresit_Api.dart';
 import 'package:spokencafe/Notifiction/notification_class.dart';
 import 'package:spokencafe/firebase_options.dart';
+
 import 'router/go_router_provider.dart';
 
 // Background message handler
@@ -21,22 +16,22 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   // You can show a notification or process data
-  print("🔥 Handling background message: ${message.messageId}",);
-
+  print(
+    "🔥 Handling background message: ${message.messageId}",
+  );
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await StripeService.instance.initialize();
-    try {
+  //await StripeService.instance.initialize();
+  try {
     await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: AndroidProvider.playIntegrity,
-      appleProvider: AppleProvider.appAttest,
+      options: DefaultFirebaseOptions.currentPlatform,
     );
-     await Stripe.instance.applySettings();
+    // await FirebaseAppCheck.instance.activate(
+    //   androidProvider: AndroidProvider.playIntegrity,
+    //   appleProvider: AppleProvider.appAttest,
+    // );
   } catch (e) {
     print('Firebase init error: $e');
   }
@@ -50,7 +45,7 @@ void main() async {
 
   // Ask notification permissions (important for iOS)
   await FirebaseMessaging.instance.requestPermission();
-  await _setup();
+
   await Geolocator.checkPermission();
   final bool isLoggedIn = await _checkLoginStatus();
   runApp(
@@ -61,10 +56,6 @@ void main() async {
       child: const MyApp(),
     ),
   );
-}
-
-Future<void> _setup() async {
-  Stripe.publishableKey = stripPublishKey;
 }
 
 /// Checks if the user is already logged in
@@ -164,6 +155,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     final bool isLoggedIn = ref.watch(isLoggedInProvider);

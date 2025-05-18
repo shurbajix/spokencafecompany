@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -9,9 +9,6 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:spokencafe/Credit_Card/Cresit_Api.dart';
 import 'package:video_player/video_player.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_stripe/flutter_stripe.dart';
 
 // Define Lesson class
 class Lesson {
@@ -25,9 +22,9 @@ class AllUsersProfile extends ConsumerStatefulWidget {
   final String userId;
 
   const AllUsersProfile({
-    Key? key,
+    super.key,
     required this.userId,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<AllUsersProfile> createState() => _AllUsersProfileState();
@@ -46,7 +43,7 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
   Map<String, dynamic> userData = {};
   bool isDescriptionLoading = true;
   String? userDescription;
-  double? _teacherRating = 0.0;
+  final double _teacherRating = 0.0;
   List<DocumentSnapshot> _filteredLessons = [];
   List<Lesson> savedLessons = [];
   bool _isLocationLoading = false;
@@ -58,7 +55,11 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
   StreamSubscription? _followersCountSubscription;
   StreamSubscription? _followingCountSubscription;
   StreamSubscription? _userDataSubscription;
-
+// here the textfiled for payemnt part
+  final TextEditingController cardNumberController = TextEditingController();
+  final TextEditingController expMonthController = TextEditingController();
+  final TextEditingController expYearController = TextEditingController();
+  final TextEditingController cvvController = TextEditingController();
   Future<void> _fetchUserData() async {
     final doc = await FirebaseFirestore.instance
         .collection('users')
@@ -174,7 +175,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to ${isFollowing ? 'unfollow' : 'follow'}: $e'),
+            content:
+                Text('Failed to ${isFollowing ? 'unfollow' : 'follow'}: $e'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -224,12 +226,13 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
         });
 
         if (teacherIntroVideo != null) {
-          _introVideoController = VideoPlayerController.network(teacherIntroVideo)
-            ..initialize().then((_) {
-              if (mounted) {
-                setState(() {});
-              }
-            });
+          _introVideoController =
+              VideoPlayerController.network(teacherIntroVideo)
+                ..initialize().then((_) {
+                  if (mounted) {
+                    setState(() {});
+                  }
+                });
         }
       }
     } catch (e) {
@@ -266,10 +269,12 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
         } else {
           return Container(
             color: Colors.black12,
-            child: const Center(child: CircularProgressIndicator(
-               color:  Color(0xff1B1212),
-                               backgroundColor: Colors.white,
-            ),),
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xff1B1212),
+                backgroundColor: Colors.white,
+              ),
+            ),
           );
         }
       },
@@ -277,7 +282,9 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
   }
 
   Future<VideoPlayerController> _initializeVideo(String url) async {
-    final controller = VideoPlayerController.network(url);
+    final controller = VideoPlayerController.networkUrl(
+      Uri.https(url),
+    );
     await controller.initialize();
     return controller;
   }
@@ -336,7 +343,7 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
     if (!mounted) return;
 
     setState(() {
-      _isLocationLoading =true;
+      _isLocationLoading = true;
       _locationPermissionDenied = false;
     });
 
@@ -406,7 +413,7 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
             .collection('users')
             .doc(teacherId)
             .get();
-        final teacherData = teacherDoc.data() as Map<String, dynamic>?;
+        final teacherData = teacherDoc.data();
 
         if (teacherData != null &&
             teacherData['latitude'] != null &&
@@ -446,34 +453,48 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
         .get();
 
     final takenLessonIds = takenLessonsSnapshot.docs
-        .where((doc) => doc.data().containsKey('lessonId') && doc['lessonId'] is String)
+        .where((doc) =>
+            doc.data().containsKey('lessonId') && doc['lessonId'] is String)
         .map((doc) => doc['lessonId'] as String)
         .toSet();
 
-    return lessons.where((lesson) => !takenLessonIds.contains(lesson.id)).toList();
+    return lessons
+        .where((lesson) => !takenLessonIds.contains(lesson.id))
+        .toList();
   }
 
   Future<void> _joinLesson(String lessonDocId, BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final lessonRef = FirebaseFirestore.instance.collection('lessons').doc(lessonDocId);
-    final takenLessonsRef = FirebaseFirestore.instance.collection('takenLessons');
+    final lessonRef =
+        FirebaseFirestore.instance.collection('lessons').doc(lessonDocId);
+    final takenLessonsRef =
+        FirebaseFirestore.instance.collection('takenLessons');
 
     try {
-      final paymentSuccess = await StripeService.instance.makePayment(180);
+      final success = await NestpayPaymentService.instance.makePayment(
+    amount: 180,
+    number: '4242424242424242',
+    expMonth: '12',
+    expYear: '2030',
+    cvv: '123',
+    email: 'user@example.com',
+    name: 'John Doe',
+  );
 
-      if (!paymentSuccess) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Colors.red,
-              content: Text('Payment failed or cancelled'),
-            ),
-          );
-        }
-        return;
+  if (!success) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red,
+          content: Text('Payment failed or cancelled'),
+        ),
+      );
+    }
+    return;
+  
       }
 
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -481,14 +502,17 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
         if (!lessonSnapshot.exists) throw Exception("Lesson does not exist!");
 
         final lessonData = lessonSnapshot.data()!;
-        final currentStudentCount = (lessonData['currentStudentCount'] ?? 0) as int;
+        final currentStudentCount =
+            (lessonData['currentStudentCount'] ?? 0) as int;
 
         if (currentStudentCount >= 8) {
           throw Exception("Lesson is full. You cannot join.");
         }
 
         final teacherDoc = await transaction.get(
-          FirebaseFirestore.instance.collection('users').doc(lessonData['teacherId']),
+          FirebaseFirestore.instance
+              .collection('users')
+              .doc(lessonData['teacherId']),
         );
         final teacherData = teacherDoc.data() as Map<String, dynamic>;
         final teacherName = '${teacherData['name']} ${teacherData['surname']}';
@@ -549,7 +573,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
           .orderBy('dateTime', descending: true)
           .get();
 
-      var filtered = await _filterLessonsByDistance(lessonSnapshot.docs, distance);
+      var filtered =
+          await _filterLessonsByDistance(lessonSnapshot.docs, distance);
       filtered = await _excludeTakenLessons(filtered);
 
       if (mounted) {
@@ -634,7 +659,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
           backgroundColor: Colors.white,
           leading: IconButton(
             onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xff1B1212)),
+            icon:
+                const Icon(Icons.arrow_back_ios_new, color: Color(0xff1B1212)),
           ),
         ),
         body: ListView(
@@ -647,7 +673,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(
-                        color: isFollowing ? Colors.red : const Color(0xff1B1212),
+                        color:
+                            isFollowing ? Colors.red : const Color(0xff1B1212),
                         width: 2,
                       ),
                       shape: RoundedRectangleBorder(
@@ -659,13 +686,18 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                         ? const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color:  Color(0xff1B1212),
-                               backgroundColor: Colors.white,),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xff1B1212),
+                              backgroundColor: Colors.white,
+                            ),
                           )
                         : Text(
                             isFollowing ? 'Following' : 'Follow',
                             style: TextStyle(
-                              color: isFollowing ? Colors.red : const Color(0xff1B1212),
+                              color: isFollowing
+                                  ? Colors.red
+                                  : const Color(0xff1B1212),
                               fontSize: 20,
                             ),
                           ),
@@ -706,7 +738,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                             alignment: Alignment.center,
                             children: [
                               AspectRatio(
-                                aspectRatio: _introVideoController!.value.aspectRatio,
+                                aspectRatio:
+                                    _introVideoController!.value.aspectRatio,
                                 child: VideoPlayer(_introVideoController!),
                               ),
                               IconButton(
@@ -719,7 +752,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                 ),
                                 onPressed: () {
                                   setState(() {
-                                    if (_introVideoController!.value.isPlaying) {
+                                    if (_introVideoController!
+                                        .value.isPlaying) {
                                       _introVideoController!.pause();
                                     } else {
                                       _introVideoController!.play();
@@ -729,10 +763,12 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                               ),
                             ],
                           )
-                        : const Center(child: CircularProgressIndicator(
-                           color:  Color(0xff1B1212),
-                               backgroundColor: Colors.white,
-                        ),),
+                        : const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xff1B1212),
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
               ),
               const SizedBox(height: 20),
               // Conditionally show Teacher Lessons ListTile
@@ -763,7 +799,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
                                 child: Text(
                                   teacherName,
                                   textAlign: TextAlign.center,
@@ -774,7 +811,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                               ),
                               Expanded(
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 20),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 20),
                                   child: _isLocationLoading
                                       ? const Center(
                                           child: CircularProgressIndicator(
@@ -784,20 +822,27 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                       : _locationPermissionDenied
                                           ? Center(
                                               child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
                                                 children: [
                                                   const Text(
                                                     'Location permission is required to filter lessons by distance',
                                                     textAlign: TextAlign.center,
-                                                    style: TextStyle(fontSize: 18),
+                                                    style:
+                                                        TextStyle(fontSize: 18),
                                                   ),
                                                   const SizedBox(height: 20),
                                                   ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: const Color(0xff1B1212),
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          const Color(
+                                                              0xff1B1212),
                                                     ),
-                                                    onPressed: _getCurrentLocation,
-                                                    child: const Text('Enable Location'),
+                                                    onPressed:
+                                                        _getCurrentLocation,
+                                                    child: const Text(
+                                                        'Enable Location'),
                                                   ),
                                                 ],
                                               ),
@@ -805,19 +850,26 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                           : StreamBuilder<QuerySnapshot>(
                                               stream: FirebaseFirestore.instance
                                                   .collection('lessons')
-                                                  .where('teacherId', isEqualTo: widget.userId)
-                                                  .orderBy('dateTime', descending: true)
+                                                  .where('teacherId',
+                                                      isEqualTo: widget.userId)
+                                                  .orderBy('dateTime',
+                                                      descending: true)
                                                   .snapshots(),
-                                              builder: (context, lessonSnapshot) {
-                                                if (!mounted) return const SizedBox.shrink();
+                                              builder:
+                                                  (context, lessonSnapshot) {
+                                                if (!mounted)
+                                                  return const SizedBox
+                                                      .shrink();
 
-                                                if (lessonSnapshot.connectionState ==
+                                                if (lessonSnapshot
+                                                        .connectionState ==
                                                     ConnectionState.waiting) {
                                                   return const Center(
-                                                    child: CircularProgressIndicator(
-                                                    
-                                                       color:  Color(0xff1B1212),
-                                                        backgroundColor: Colors.white,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      color: Color(0xff1B1212),
+                                                      backgroundColor:
+                                                          Colors.white,
                                                     ),
                                                   );
                                                 }
@@ -825,93 +877,136 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                                 if (lessonSnapshot.hasError ||
                                                     !lessonSnapshot.hasData) {
                                                   return const Center(
-                                                      child: Text('Error fetching lessons'));
+                                                      child: Text(
+                                                          'Error fetching lessons'));
                                                 }
 
-                                                final lessonDocs = lessonSnapshot.data!.docs;
+                                                final lessonDocs =
+                                                    lessonSnapshot.data!.docs;
 
                                                 if (_filteredLessons.isEmpty) {
-                                                  _excludeTakenLessons(lessonDocs).then((filtered) {
+                                                  _excludeTakenLessons(
+                                                          lessonDocs)
+                                                      .then((filtered) {
                                                     if (mounted) {
                                                       setState(() {
-                                                        _filteredLessons = filtered;
+                                                        _filteredLessons =
+                                                            filtered;
                                                       });
                                                     }
                                                   });
                                                 }
 
                                                 return ListView.builder(
-                                                  itemCount: _filteredLessons.length,
-                                                  itemBuilder: (context, index) {
-                                                    final lessonDoc = _filteredLessons[index];
-                                                    final lessonData = lessonDoc.data()
+                                                  itemCount:
+                                                      _filteredLessons.length,
+                                                  itemBuilder:
+                                                      (context, index) {
+                                                    final lessonDoc =
+                                                        _filteredLessons[index];
+                                                    final lessonData = lessonDoc
+                                                            .data()
                                                         as Map<String, dynamic>;
-                                                    final teacherId = lessonData['teacherId'];
-                                                    final lessonDocId = lessonDoc.id;
+                                                    final teacherId =
+                                                        lessonData['teacherId'];
+                                                    final lessonDocId =
+                                                        lessonDoc.id;
                                                     final currentStudentCount =
                                                         (lessonData['currentStudentCount']
                                                                 as int?) ??
                                                             0;
 
-                                                    return FutureBuilder<DocumentSnapshot>(
-                                                      future: FirebaseFirestore.instance
+                                                    return FutureBuilder<
+                                                        DocumentSnapshot>(
+                                                      future: FirebaseFirestore
+                                                          .instance
                                                           .collection('users')
                                                           .doc(teacherId)
                                                           .get(),
-                                                      builder: (context, teacherSnapshot) {
-                                                        if (!mounted) return const SizedBox.shrink();
+                                                      builder: (context,
+                                                          teacherSnapshot) {
+                                                        if (!mounted)
+                                                          return const SizedBox
+                                                              .shrink();
 
-                                                        if (teacherSnapshot.connectionState ==
-                                                            ConnectionState.waiting) {
+                                                        if (teacherSnapshot
+                                                                .connectionState ==
+                                                            ConnectionState
+                                                                .waiting) {
                                                           return const Center(
-                                                            child: CircularProgressIndicator(
-                                                               color:  Color(0xff1B1212),
-                                                               backgroundColor: Colors.white,
+                                                            child:
+                                                                CircularProgressIndicator(
+                                                              color: Color(
+                                                                  0xff1B1212),
+                                                              backgroundColor:
+                                                                  Colors.white,
                                                               strokeWidth: 4,
                                                             ),
                                                           );
                                                         }
 
-                                                        if (teacherSnapshot.hasError ||
-                                                            !teacherSnapshot.hasData) {
+                                                        if (teacherSnapshot
+                                                                .hasError ||
+                                                            !teacherSnapshot
+                                                                .hasData) {
                                                           return const Center(
-                                                              child:
-                                                                  Text('Error fetching teacher data'));
+                                                              child: Text(
+                                                                  'Error fetching teacher data'));
                                                         }
 
-                                                        final teacher = teacherSnapshot.data!.data()
-                                                            as Map<String, dynamic>?;
+                                                        final teacher =
+                                                            teacherSnapshot
+                                                                    .data!
+                                                                    .data()
+                                                                as Map<String,
+                                                                    dynamic>?;
                                                         final teacherRole =
-                                                            teacher?['role'] ?? 'student';
+                                                            teacher?['role'] ??
+                                                                'student';
                                                         final teacherName =
-                                                            teacher?['name'] ?? 'Unknown Teacher';
+                                                            teacher?['name'] ??
+                                                                'Unknown Teacher';
                                                         final teacherSurname =
-                                                            teacher?['surname'] ?? '';
+                                                            teacher?[
+                                                                    'surname'] ??
+                                                                '';
 
-                                                        String displayName = teacherRole == 'teacher'
-                                                            ? '$teacherName $teacherSurname'
-                                                            : 'Unknown User';
+                                                        String displayName =
+                                                            teacherRole ==
+                                                                    'teacher'
+                                                                ? '$teacherName $teacherSurname'
+                                                                : 'Unknown User';
 
                                                         return Container(
-                                                          margin: const EdgeInsets.all(10),
-                                                          decoration: BoxDecoration(
+                                                          margin:
+                                                              const EdgeInsets
+                                                                  .all(10),
+                                                          decoration:
+                                                              BoxDecoration(
                                                             color: Colors.white,
-                                                            borderRadius: BorderRadius.circular(10),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        10),
                                                             boxShadow: const [
                                                               BoxShadow(
-                                                                color: Colors.grey,
-                                                                offset: Offset(0.0, 1.0),
+                                                                color:
+                                                                    Colors.grey,
+                                                                offset: Offset(
+                                                                    0.0, 1.0),
                                                                 blurRadius: 6.0,
                                                               ),
                                                             ],
                                                           ),
                                                           child: Column(
                                                             crossAxisAlignment:
-                                                                CrossAxisAlignment.stretch,
+                                                                CrossAxisAlignment
+                                                                    .stretch,
                                                             children: [
                                                               InkWell(
                                                                 onTap: () {
-                                                                  Navigator.push(
+                                                                  Navigator
+                                                                      .push(
                                                                     context,
                                                                     PageRouteBuilder(
                                                                       pageBuilder: (
@@ -919,106 +1014,120 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                                                         animation,
                                                                         secondaryAnimation,
                                                                       ) =>
-                                                                          AllUsersProfile(
-                                                                              userId: teacherId),
-                                                                      transitionsBuilder: (
+                                                                          AllUsersProfile(userId: teacherId),
+                                                                      transitionsBuilder:
+                                                                          (
                                                                         context,
                                                                         animation,
                                                                         secondaryAnimation,
                                                                         child,
                                                                       ) {
-                                                                        const begin = Offset(1.0, 0.0);
-                                                                        const end = Offset.zero;
-                                                                        const curve = Curves.easeInOut;
+                                                                        const begin = Offset(
+                                                                            1.0,
+                                                                            0.0);
+                                                                        const end =
+                                                                            Offset.zero;
+                                                                        const curve =
+                                                                            Curves.easeInOut;
 
-                                                                        var tween = Tween(
-                                                                          begin: begin,
-                                                                          end: end,
+                                                                        var tween =
+                                                                            Tween(
+                                                                          begin:
+                                                                              begin,
+                                                                          end:
+                                                                              end,
                                                                         ).chain(
                                                                           CurveTween(
-                                                                            curve: curve,
+                                                                            curve:
+                                                                                curve,
                                                                           ),
                                                                         );
                                                                         return SlideTransition(
-                                                                          position: animation.drive(
+                                                                          position:
+                                                                              animation.drive(
                                                                             tween,
                                                                           ),
-                                                                          child: child,
+                                                                          child:
+                                                                              child,
                                                                         );
                                                                       },
                                                                     ),
                                                                   );
                                                                 },
                                                                 child: Padding(
-                                                                  padding: const EdgeInsets.only(
-                                                                      left: 10, top: 5),
+                                                                  padding:
+                                                                      const EdgeInsets
+                                                                          .only(
+                                                                          left:
+                                                                              10,
+                                                                          top:
+                                                                              5),
                                                                   child: Row(
                                                                     children: [
-                                                                      StreamBuilder<DocumentSnapshot>(
+                                                                      StreamBuilder<
+                                                                          DocumentSnapshot>(
                                                                         stream: FirebaseFirestore
                                                                             .instance
                                                                             .collection('users')
                                                                             .doc(teacherId)
                                                                             .snapshots(),
-                                                                        builder: (context, snapshot) {
+                                                                        builder:
+                                                                            (context,
+                                                                                snapshot) {
                                                                           if (!mounted) {
                                                                             return CircleAvatar(
                                                                               radius: 25,
-                                                                              backgroundColor:
-                                                                                  Colors.grey[100],
-                                                                              child: Icon(Icons.person,
-                                                                                  color: Colors.white),
+                                                                              backgroundColor: Colors.grey[100],
+                                                                              child: Icon(Icons.person, color: Colors.white),
                                                                             );
                                                                           }
 
-                                                                          if (snapshot.hasError) {
+                                                                          if (snapshot
+                                                                              .hasError) {
                                                                             return CircleAvatar(
                                                                               radius: 25,
-                                                                              backgroundColor:
-                                                                                  Colors.grey[100],
-                                                                              child: Icon(Icons.person,
-                                                                                  color: Colors.white),
+                                                                              backgroundColor: Colors.grey[100],
+                                                                              child: Icon(Icons.person, color: Colors.white),
                                                                             );
                                                                           }
 
                                                                           if (snapshot.hasData &&
                                                                               snapshot.data!.exists) {
-                                                                            final userData = snapshot
-                                                                                .data!
-                                                                                .data()
-                                                                                as Map<String, dynamic>;
+                                                                            final userData =
+                                                                                snapshot.data!.data() as Map<String, dynamic>;
                                                                             final imageUrl =
-                                                                                userData[
-                                                                                        'profileImageUrl'] ??
-                                                                                    '';
+                                                                                userData['profileImageUrl'] ?? '';
 
                                                                             if (imageUrl.isNotEmpty) {
                                                                               return CircleAvatar(
                                                                                 radius: 25,
-                                                                                backgroundImage:
-                                                                                    NetworkImage(imageUrl),
+                                                                                backgroundImage: NetworkImage(imageUrl),
                                                                                 backgroundColor: Colors.grey,
                                                                               );
                                                                             }
                                                                           }
 
                                                                           return CircleAvatar(
-                                                                            radius: 25,
+                                                                            radius:
+                                                                                25,
                                                                             backgroundColor:
                                                                                 Colors.grey[100],
-                                                                            child: Icon(Icons.person,
-                                                                                color: Colors.white),
+                                                                            child:
+                                                                                Icon(Icons.person, color: Colors.white),
                                                                           );
                                                                         },
                                                                       ),
-                                                                      const SizedBox(width: 10),
+                                                                      const SizedBox(
+                                                                          width:
+                                                                              10),
                                                                       Column(
                                                                         crossAxisAlignment:
                                                                             CrossAxisAlignment.start,
                                                                         children: [
                                                                           Text(
                                                                             displayName,
-                                                                            style: const TextStyle(
+                                                                            style:
+                                                                                const TextStyle(
                                                                               fontSize: 16,
                                                                               color: Color(0xff1B1212),
                                                                               fontWeight: FontWeight.bold,
@@ -1026,11 +1135,9 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                                                           ),
                                                                           Row(
                                                                             children: [
-                                                                              Icon(Icons.star,
-                                                                                  color: Colors.yellow[700]),
+                                                                              Icon(Icons.star, color: Colors.yellow[700]),
                                                                               Text(
-                                                                                _teacherRating!
-                                                                                    .toStringAsFixed(1),
+                                                                                _teacherRating.toStringAsFixed(1),
                                                                                 style: const TextStyle(
                                                                                   fontSize: 16,
                                                                                   color: Color(0xff1B1212),
@@ -1045,51 +1152,60 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                                                 ),
                                                               ),
                                                               Padding(
-                                                                padding: const EdgeInsets.only(
-                                                                    left: 10, right: 10, top: 10),
+                                                                padding:
+                                                                    const EdgeInsets
+                                                                        .only(
+                                                                        left:
+                                                                            10,
+                                                                        right:
+                                                                            10,
+                                                                        top:
+                                                                            10),
                                                                 child: Row(
                                                                   mainAxisAlignment:
-                                                                      MainAxisAlignment.spaceBetween,
+                                                                      MainAxisAlignment
+                                                                          .spaceBetween,
                                                                   children: [
                                                                     Column(
                                                                       crossAxisAlignment:
-                                                                          CrossAxisAlignment.start,
+                                                                          CrossAxisAlignment
+                                                                              .start,
                                                                       children: [
                                                                         Text(
                                                                           lessonData['speakLevel'] ??
                                                                               'N/A',
-                                                                          style: const TextStyle(
-                                                                            fontSize: 20,
-                                                                            color: Color(0xff1B1212),
-                                                                            fontWeight: FontWeight.bold,
+                                                                          style:
+                                                                              const TextStyle(
+                                                                            fontSize:
+                                                                                20,
+                                                                            color:
+                                                                                Color(0xff1B1212),
+                                                                            fontWeight:
+                                                                                FontWeight.bold,
                                                                           ),
                                                                         ),
                                                                       ],
                                                                     ),
-                                                                    if (currentStudentCount < 8)
+                                                                    if (currentStudentCount <
+                                                                        8)
                                                                       TextButton(
-                                                                        onPressed: () {
+                                                                        onPressed:
+                                                                            () {
                                                                           showDialog(
-                                                                            context: context,
+                                                                            context:
+                                                                                context,
                                                                             builder: (context) =>
                                                                                 AlertDialog(
-                                                                              backgroundColor:
-                                                                                  Colors.white,
-                                                                              title: const Text(
-                                                                                  'Confirm Lesson',
-                                                                                  style: TextStyle(
-                                                                                      color: Colors.blue)),
+                                                                              backgroundColor: Colors.white,
+                                                                              title: const Text('Confirm Lesson', style: TextStyle(color: Colors.blue)),
                                                                               content: const Text(
                                                                                 'Derse katılacağınıza emin misiniz? Satın aldiktan sonra katılımınız iptal edilemez',
-                                                                                style:
-                                                                                    TextStyle(fontSize: 20),
+                                                                                style: TextStyle(fontSize: 20),
                                                                               ),
                                                                               actions: [
                                                                                 TextButton(
-                                                                                  onPressed: () =>
-                                                                                      Navigator.pop(context),
-                                                                                  child: const Text(
-                                                                                      'Onaylamiyorum',
+                                                                                  onPressed: () => Navigator.pop(context),
+                                                                                  child: const Text('Onaylamiyorum',
                                                                                       style: TextStyle(
                                                                                         color: Colors.red,
                                                                                         fontSize: 17,
@@ -1097,80 +1213,58 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                                                                 ),
                                                                                 TextButton(
                                                                                   onPressed: () async {
-                                                                                    Navigator.of(context)
-                                                                                        .pop();
+                                                                                    Navigator.of(context).pop();
 
                                                                                     try {
-                                                                                      final paymentSuccess =
-                                                                                          await StripeService
-                                                                                              .instance
-                                                                                              .makePayment(180);
+                                                                                      final success = await NestpayPaymentService.instance.makePayment(
+                                                                                        amount: 180,
+                                                                                        number: cardNumberController.text,
+                                                                                        expMonth: expMonthController.text,
+                                                                                        expYear: expYearController.text,
+                                                                                        cvv: cvvController.text,
+                                                                                        email: FirebaseAuth.instance.currentUser?.email ?? '',
+                                                                                        name: FirebaseAuth.instance.currentUser?.displayName ?? '',
+                                                                                      );
 
-                                                                                      if (paymentSuccess) {
-                                                                                        await _joinLesson(
-                                                                                            lessonDocId,
-                                                                                            context);
+                                                                                      if (success) {
+                                                                                        await _joinLesson(lessonDocId, context);
                                                                                         if (context.mounted) {
                                                                                           setState(() {
-                                                                                            _filteredLessons
-                                                                                                .removeWhere(
-                                                                                                    (doc) =>
-                                                                                                        doc.id ==
-                                                                                                        lessonDocId);
+                                                                                            _filteredLessons.removeWhere((doc) => doc.id == lessonDocId);
                                                                                           });
-                                                                                          await removeLesson(
-                                                                                              index);
-                                                                                          ScaffoldMessenger.of(
-                                                                                                  context)
-                                                                                              .showSnackBar(
+                                                                                          await removeLesson(index);
+                                                                                          ScaffoldMessenger.of(context).showSnackBar(
                                                                                             const SnackBar(
-                                                                                              behavior:
-                                                                                                  SnackBarBehavior
-                                                                                                      .floating,
-                                                                                              backgroundColor:
-                                                                                                  Colors.green,
-                                                                                              content: Text(
-                                                                                                  'Payment and lesson join successful!'),
+                                                                                              behavior: SnackBarBehavior.floating,
+                                                                                              backgroundColor: Colors.green,
+                                                                                              content: Text('Payment and lesson join successful!'),
                                                                                             ),
                                                                                           );
                                                                                         }
                                                                                       } else {
                                                                                         if (context.mounted) {
-                                                                                          ScaffoldMessenger.of(
-                                                                                                  context)
-                                                                                              .showSnackBar(
+                                                                                          ScaffoldMessenger.of(context).showSnackBar(
                                                                                             const SnackBar(
-                                                                                              behavior:
-                                                                                                  SnackBarBehavior
-                                                                                                      .floating,
-                                                                                              backgroundColor:
-                                                                                                  Colors.red,
-                                                                                              content: Text(
-                                                                                                  'Payment failed or cancelled'),
+                                                                                              behavior: SnackBarBehavior.floating,
+                                                                                              backgroundColor: Colors.red,
+                                                                                              content: Text('Payment failed or cancelled'),
                                                                                             ),
                                                                                           );
                                                                                         }
                                                                                       }
                                                                                     } catch (e) {
                                                                                       if (context.mounted) {
-                                                                                        ScaffoldMessenger.of(
-                                                                                                context)
-                                                                                            .showSnackBar(
+                                                                                        ScaffoldMessenger.of(context).showSnackBar(
                                                                                           SnackBar(
-                                                                                            behavior:
-                                                                                                SnackBarBehavior
-                                                                                                    .floating,
-                                                                                            backgroundColor:
-                                                                                                Colors.red,
-                                                                                            content: Text(
-                                                                                                'Error: ${e.toString()}'),
+                                                                                            behavior: SnackBarBehavior.floating,
+                                                                                            backgroundColor: Colors.red,
+                                                                                            content: Text('Error: ${e.toString()}'),
                                                                                           ),
                                                                                         );
                                                                                       }
                                                                                     }
                                                                                   },
-                                                                                  child: const Text(
-                                                                                      'Onaylıyorum',
+                                                                                  child: const Text('Onaylıyorum',
                                                                                       style: TextStyle(
                                                                                         color: Colors.blue,
                                                                                         fontSize: 17,
@@ -1180,11 +1274,15 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                                                             ),
                                                                           );
                                                                         },
-                                                                        child: const Text(
+                                                                        child:
+                                                                            const Text(
                                                                           'Take Lesson',
-                                                                          style: TextStyle(
-                                                                            color: Color(0xff1B1212),
-                                                                            fontWeight: FontWeight.bold,
+                                                                          style:
+                                                                              TextStyle(
+                                                                            color:
+                                                                                Color(0xff1B1212),
+                                                                            fontWeight:
+                                                                                FontWeight.bold,
                                                                           ),
                                                                         ),
                                                                       ),
@@ -1192,47 +1290,67 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                                                                 ),
                                                               ),
                                                               Padding(
-                                                                padding: const EdgeInsets.only(
-                                                                    right: 20, left: 10),
+                                                                padding:
+                                                                    const EdgeInsets
+                                                                        .only(
+                                                                        right:
+                                                                            20,
+                                                                        left:
+                                                                            10),
                                                                 child: Row(
                                                                   mainAxisAlignment:
-                                                                      MainAxisAlignment.spaceBetween,
+                                                                      MainAxisAlignment
+                                                                          .spaceBetween,
                                                                   children: [
                                                                     Row(
                                                                       mainAxisAlignment:
-                                                                          MainAxisAlignment.spaceBetween,
+                                                                          MainAxisAlignment
+                                                                              .spaceBetween,
                                                                       children: [
                                                                         Text(
                                                                           DateFormat('yyyy/MM/dd hh:mm a')
                                                                               .format(
-                                                                            _parseDateTime(
-                                                                                lessonData['dateTime']),
+                                                                            _parseDateTime(lessonData['dateTime']),
                                                                           ),
-                                                                          style: const TextStyle(
-                                                                            color: Color(0xff1B1212),
-                                                                            fontWeight: FontWeight.bold,
+                                                                          style:
+                                                                              const TextStyle(
+                                                                            color:
+                                                                                Color(0xff1B1212),
+                                                                            fontWeight:
+                                                                                FontWeight.bold,
                                                                           ),
                                                                         ),
                                                                       ],
                                                                     ),
                                                                     Text(
                                                                       'Students: ${lessonData['currentStudentCount'] ?? 0}/8',
-                                                                      style: TextStyle(
-                                                                        color: Colors.grey[700],
-                                                                        fontSize: 14,
+                                                                      style:
+                                                                          TextStyle(
+                                                                        color: Colors
+                                                                            .grey[700],
+                                                                        fontSize:
+                                                                            14,
                                                                       ),
                                                                     ),
                                                                   ],
                                                                 ),
                                                               ),
                                                               Padding(
-                                                                padding: const EdgeInsets.all(10.0),
+                                                                padding:
+                                                                    const EdgeInsets
+                                                                        .all(
+                                                                        10.0),
                                                                 child: Text(
-                                                                  lessonData['description'] ??
+                                                                  lessonData[
+                                                                          'description'] ??
                                                                       'No description available.',
-                                                                  style: const TextStyle(
-                                                                    color: Color(0xff1B1212),
-                                                                    fontWeight: FontWeight.bold,
+                                                                  style:
+                                                                      const TextStyle(
+                                                                    color: Color(
+                                                                        0xff1B1212),
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
                                                                   ),
                                                                 ),
                                                               ),
@@ -1277,8 +1395,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
               child: isDescriptionLoading
                   ? const Center(
                       child: CircularProgressIndicator(
-                         color:  Color(0xff1B1212),
-                               backgroundColor: Colors.white,
+                        color: Color(0xff1B1212),
+                        backgroundColor: Colors.white,
                       ),
                     )
                   : Text(
@@ -1308,7 +1426,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                     children: [
                       GridView.builder(
                         itemCount: imageUrls.length,
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,
                           childAspectRatio: 0.8,
                         ),
@@ -1325,7 +1444,8 @@ class _AllUsersProfileState extends ConsumerState<AllUsersProfile> {
                       ),
                       GridView.builder(
                         itemCount: videoUrls.length,
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,
                           childAspectRatio: 0.8,
                         ),

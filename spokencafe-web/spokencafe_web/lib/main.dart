@@ -234,24 +234,31 @@ class _HomeState extends State<Home> {
                           ),
                         ),
                       ),
-
-                      //   ClipRRect(
-
-                      //     borderRadius: BorderRadius.circular(10),
-                      //  child: Card(
-                      //   color: Colors.black,
-                      //   shadowColor: Colors.black,
-                      //   shape: RoundedRectangleBorder(
-                      //     borderRadius: BorderRadius.circular(10),
-                      //   ),
-                      //   elevation: 20,
-                      //   child: Image.asset('assets/images/phone.png',scale: 5.2,),),
-                      //  ),
+                    
                     ],
                   ),
                 ],
               ),
             ),
+            SizedBox(
+              height: 20,
+            ),
+             Container(
+              padding: EdgeInsets.all(10),
+              margin: EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.grey[200],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text('People giving a review',textAlign: TextAlign.center,style: TextStyle(
+                            fontSize: 40,
+                          ),),
+                        ],
+                      ),
+                     ),
           ],
         ),
       ),

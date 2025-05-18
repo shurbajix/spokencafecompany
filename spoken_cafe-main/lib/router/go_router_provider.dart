@@ -1,5 +1,3 @@
-
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,8 +68,8 @@ class LoadingScreen extends StatelessWidget {
     return const Scaffold(
       body: Center(
         child: CircularProgressIndicator(
-           color:  Color(0xff1B1212),
-             backgroundColor: Colors.white,
+          color: Color(0xff1B1212),
+          backgroundColor: Colors.white,
         ),
       ),
     );
