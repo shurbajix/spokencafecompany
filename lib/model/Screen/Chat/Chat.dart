@@ -408,6 +408,7 @@ class _ChatState extends State<Chat> {
                 }
 
                 return Card(
+                  shadowColor: Colors.white,
                   color: isSelected ? Colors.grey[200] : Colors.white,
                   margin:
                       const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -587,13 +588,15 @@ class _ChatState extends State<Chat> {
   Widget build(BuildContext context) {
     if (_currentUser == null) {
       return const Scaffold(
+        backgroundColor: Colors.white,
+        
           body: Center(child: Text('Please log in to access chat.')));
     }
 
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: Colors.grey[100],
+        backgroundColor: Colors.white,
         body: Row(
           children: [
             // left pane

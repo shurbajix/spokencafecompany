@@ -1197,6 +1197,7 @@ class _TeachersState extends State<Teachers> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       endDrawer: Drawer(
         width: 700,
         child: _showPostsPage
@@ -1212,6 +1213,12 @@ class _TeachersState extends State<Teachers> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
               decoration: InputDecoration(
+                         enabledBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Color(0xff1B1212)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Color(0xff1B1212)),
+    ),
                 hintText: 'Search by name, email or phone',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
@@ -1640,7 +1647,9 @@ class _TeachersState extends State<Teachers> {
         return DefaultTabController(
           length: 2,
           child: Scaffold(
+            backgroundColor: Colors.white,
             appBar: AppBar(
+              backgroundColor: Colors.white,
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new),
                 onPressed: () {
@@ -1745,6 +1754,7 @@ class _TeachersState extends State<Teachers> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
+        
         stream: FirebaseFirestore.instance
             .collection('posts')
             .where('userId', isEqualTo: _selectedTeacherDocId)

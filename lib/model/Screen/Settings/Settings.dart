@@ -11,6 +11,8 @@ class _SettingsState extends State<Settings> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
+      
       body: Column(
         spacing: 40,
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -32,16 +32,24 @@ class _HomeState extends State<Home> {
   Widget build(BuildContext context) {
     if (isDesktop) {
       // Desktop: Use Sidebar
-      return const Sidebar();
+      return const Sidebar(
+        
+      );
     } else {
       // Mobile: Use BottomNavigationBar
       return Scaffold(
+        backgroundColor: Colors.white,
+        
         appBar: AppBar(
+          backgroundColor: Colors.white,
+          shadowColor: Colors.white,
           leading:  Padding(padding: EdgeInsets.all(10),child:  Image.asset('assets/images/spken_cafe_control.png',scale: 4.9,),),
           title: const Text('Spoken Cafe Control'),
           centerTitle: true,
         ),
         bottomNavigationBar: BottomNavigationBar(
+          backgroundColor: Colors.white,
+          
           items: listhomedashboard
               .map((item) => BottomNavigationBarItem(
                     icon: Icon(_getIconForItem(item)),

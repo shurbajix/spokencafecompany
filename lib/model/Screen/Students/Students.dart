@@ -223,6 +223,7 @@ class _StudentsState extends State<Students> {
     final displayList = _filteredStudents;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       endDrawer: Drawer(
         width: 700,
         child: _showPostsPage
@@ -239,6 +240,12 @@ class _StudentsState extends State<Students> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
+                         enabledBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Color(0xff1B1212)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Color(0xff1B1212)),
+    ),
                 hintText: 'Search by name, email or phone',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(

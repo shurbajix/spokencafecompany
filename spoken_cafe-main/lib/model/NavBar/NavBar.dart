@@ -259,6 +259,7 @@ class _NavbarState extends ConsumerState<Navbar> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
+        backgroundColor: Colors.white,
         body: Center(
           child: CircularProgressIndicator(
             color: Color(0xff1B1212),
@@ -322,6 +323,7 @@ class _NavbarState extends ConsumerState<Navbar> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: IndexedStack(
+        
         index: selectedIndex,
         children: pages,
       ),

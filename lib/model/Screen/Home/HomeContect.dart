@@ -61,7 +61,6 @@ class HomeContent extends StatelessWidget {
                                               ),
                                             );
                                           }
-
                                           final validTeachers = snapshot.data!.docs
                                               .where((doc) {
                                                 final data =
@@ -284,6 +283,8 @@ class HomeContent extends StatelessWidget {
                     }),
                   ),
                   Card(
+                    color: Colors.white,
+                    shadowColor: Colors.white,
                     margin: const EdgeInsets.all(10),
                     child: Padding(
                       padding: const EdgeInsets.all(10),
