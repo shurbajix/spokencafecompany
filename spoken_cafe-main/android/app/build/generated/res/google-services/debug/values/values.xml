@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="gcm_defaultSenderId" translatable="false">324717418314</string>
-    <string name="google_api_key" translatable="false">AIzaSyDP8_hYC-IENhvvBmmSiSUx2cQOjTAf0rg</string>
-    <string name="google_app_id" translatable="false">1:324717418314:android:176725ad4ed1f51f6a93b3</string>
-    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyDP8_hYC-IENhvvBmmSiSUx2cQOjTAf0rg</string>
-    <string name="google_storage_bucket" translatable="false">spoken-cafe-4d3f0.firebasestorage.app</string>
-    <string name="project_id" translatable="false">spoken-cafe-4d3f0</string>
-</resources>

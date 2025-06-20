@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:spoken_cafe_controller/model/Screen/Chat/Chat.dart';
+import 'package:spoken_cafe_controller/model/Screen/Gallery/Gallery.dart';
 import 'package:spoken_cafe_controller/model/Screen/Home/Home.dart';
 import 'package:spoken_cafe_controller/model/Screen/Home/HomeContect.dart';
 import 'package:spoken_cafe_controller/model/Screen/Settings/Settings.dart';
@@ -108,6 +109,8 @@ class _SidebarState extends State<Sidebar> {
         return Icons.chat;
       case 'Setting':
         return Icons.settings;
+      case 'Gallery':
+        return Icons.browse_gallery;
       default:
         return Icons.circle;
     }
@@ -126,6 +129,8 @@ class _SidebarState extends State<Sidebar> {
         return const Chat();
       case 'Setting':
         return const Settings();
+      case 'Gallery':
+        return const Gallery();
       default:
         return const HomeContent(isMobile: false);
     }
