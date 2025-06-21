@@ -1,4 +1,3 @@
-
 // import 'dart:io';
 
 // import 'package:dio/dio.dart';
@@ -20,6 +19,7 @@
 //   final String? verificationDocument;
 //   final String? verificationDescription;
 //   final bool isVerified;
+//   final String? rejectionReason;
 
 //   Teacher({
 //     required this.name,
@@ -31,20 +31,45 @@
 //     this.verificationDocument,
 //     this.verificationDescription,
 //     required this.isVerified,
+//     this.rejectionReason,
 //   });
 
 //   factory Teacher.fromFirestore(DocumentSnapshot doc) {
 //     final data = doc.data() as Map<String, dynamic>? ?? {};
+    
+//     // Safe conversion for rejectionReason
+//     String? rejectionReason;
+//     final rejectionReasonData = data['rejectionReason'];
+//     if (rejectionReasonData != null) {
+//       if (rejectionReasonData is String) {
+//         rejectionReason = rejectionReasonData;
+//       } else if (rejectionReasonData is Map) {
+//         // If it's a map, try to convert to string or use a default
+//         rejectionReason = rejectionReasonData.toString();
+//       } else {
+//         // For any other type, convert to string
+//         rejectionReason = rejectionReasonData.toString();
+//       }
+//     }
+    
+//     // Safe conversion for other string fields
+//     String? safeStringConversion(dynamic value) {
+//       if (value == null) return null;
+//       if (value is String) return value;
+//       return value.toString();
+//     }
+    
 //     return Teacher(
 //       name: data['name']?.toString() ?? 'No name',
 //       email: data['email']?.toString() ?? 'No email',
 //       phoneNumber: data['phoneNumber']?.toString() ?? 'No phone number',
 //       docId: doc.id,
-//       profileImageUrl: data['profileImageUrl'] as String?,
-//       verificationVideo: data['verificationVideo'] as String?,
-//       verificationDocument: data['verificationDocument'] as String?,
-//       verificationDescription: data['verificationDescription'] as String?,
+//       profileImageUrl: safeStringConversion(data['profileImageUrl']),
+//       verificationVideo: safeStringConversion(data['verificationVideo']),
+//       verificationDocument: safeStringConversion(data['verificationDocument']),
+//       verificationDescription: safeStringConversion(data['verificationDescription']),
 //       isVerified: data['isVerified'] == true,
+//       rejectionReason: rejectionReason,
 //     );
 //   }
 // }
@@ -56,7 +81,7 @@
 //   _TeachersState createState() => _TeachersState();
 // }
 
-// class _TeachersState extends State<Teachers> {
+// class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
 //   final ScrollController _scrollController = ScrollController();
 //   bool _showPostsPage = false;
 //   bool _showGalleryPage = false;
@@ -67,10 +92,18 @@
 //   bool _hasFetched = false;
 //   String? _selectedTeacherDocId;
 //   String _searchQuery = '';
+//   late TabController _tabController;
 
 //   @override
 //   void initState() {
 //     super.initState();
+//     _tabController = TabController(length: 3, vsync: this);
+//     _tabController.addListener(() {
+//       // Force rebuild when tab changes
+//       if (mounted) {
+//         setState(() {});
+//       }
+//     });
 //     _initializeFirebase();
 //   }
 
@@ -94,7 +127,19 @@
 //           .get()
 //           .timeout(const Duration(seconds: 15));
 
-//       teachers = snapshot.docs.map((doc) => Teacher.fromFirestore(doc)).toList();
+//       // Add error handling for individual teacher parsing
+//       List<Teacher> parsedTeachers = [];
+//       for (var doc in snapshot.docs) {
+//         try {
+//           final teacher = Teacher.fromFirestore(doc);
+//           parsedTeachers.add(teacher);
+//         } catch (e) {
+//           print('Error parsing teacher ${doc.id}: $e');
+//           // Continue with other teachers instead of failing completely
+//         }
+//       }
+      
+//       teachers = parsedTeachers;
 
 //       setState(() => isLoading = false);
 //     } on FirebaseException catch (e) {
@@ -123,7 +168,10 @@
 
 //   Future<void> _approve(String docId) async {
 //     try {
-//       await _usersCollection.doc(docId).update({'isVerified': true});
+//       await _usersCollection.doc(docId).update({
+//         'isVerified': true,
+//         'rejectionReason': null,
+//       });
 //       ScaffoldMessenger.of(context).showSnackBar(
 //         const SnackBar(content: Text('Teacher approved')),
 //       );
@@ -154,6 +202,24 @@
 //     }
 //   }
 
+//   Future<void> _reactivate(String docId) async {
+//     try {
+//       await _usersCollection.doc(docId).update({
+//         'isVerified': false,
+//         'rejectionReason': null, // Clear rejection reason to move back to new teachers
+//       });
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(content: Text('Teacher reactivated')),
+//       );
+//       _hasFetched = false;
+//       await _fetchTeachers();
+//     } catch (e) {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(content: Text('Reactivate failed: $e')),
+//       );
+//     }
+//   }
+
 //   Future<void> _pickFile() async {
 //     try {
 //       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -172,8 +238,10 @@
 //   @override
 //   void dispose() {
 //     _scrollController.dispose();
+//     _tabController.dispose();
 //     super.dispose();
 //   }
+  
 //   Future<void> _downloadImage(String imageUrl) async {
 //     try {
 //       var status = await Permission.storage.request();
@@ -211,14 +279,62 @@
 //       );
 //     }
 //   }
+  
 //   List<Teacher> get _filteredTeachers {
-//     if (_searchQuery.isEmpty) return teachers;
-//     final q = _searchQuery.toLowerCase();
-//     return teachers.where((t) {
-//       return t.name.toLowerCase().contains(q) ||
-//           t.email.toLowerCase().contains(q) ||
-//           t.phoneNumber.toLowerCase().contains(q);
-//     }).toList();
+//     try {
+//       if (_searchQuery.isEmpty) {
+//         final teachersByTab = _getTeachersByTab();
+//         return teachersByTab.isNotEmpty ? teachersByTab : [];
+//       }
+      
+//       final q = _searchQuery.toLowerCase();
+//       final teachersByTab = _getTeachersByTab();
+//       final filtered = teachersByTab.where((t) {
+//         return t.name.toLowerCase().contains(q) ||
+//             t.email.toLowerCase().contains(q) ||
+//             t.phoneNumber.toLowerCase().contains(q);
+//       }).toList();
+      
+//       return filtered.isNotEmpty ? filtered : [];
+//     } catch (e) {
+//       print('Error in _filteredTeachers: $e');
+//       return []; // Return empty list as fallback
+//     }
+//   }
+
+//   List<Teacher> _getTeachersByTab() {
+//     try {
+//       // Check if TabController is properly initialized
+//       if (!_tabController.hasListeners || _tabController.length != 3) {
+//         return teachers; // Return all teachers if TabController is not ready
+//       }
+      
+//       // Add safety check to ensure tab index is valid
+//       if (_tabController.index < 0 || _tabController.index >= 3) {
+//         return teachers; // Return all teachers if invalid index
+//       }
+      
+//       switch (_tabController.index) {
+//         case 0: // New Teachers (not verified and not rejected)
+//           return teachers.where((t) => !t.isVerified && !_isRejected(t)).toList();
+//         case 1: // Active Teachers (verified)
+//           return teachers.where((t) => t.isVerified).toList();
+//         case 2: // Rejected Teachers
+//           return teachers.where((t) => _isRejected(t)).toList();
+//         default:
+//           return teachers;
+//       }
+//     } catch (e) {
+//       print('Error in _getTeachersByTab: $e');
+//       return teachers; // Return all teachers as fallback
+//     }
+//   }
+
+//   bool _isRejected(Teacher teacher) {
+//     // You might need to add a 'rejectionReason' field to your Teacher model
+//     // For now, we'll consider teachers as rejected if they have a rejection reason
+//     // This is a simplified approach - you may need to adjust based on your data structure
+//     return teacher.rejectionReason != null;
 //   }
 
 //   bool _isVideoUrl(String url) {
@@ -244,7 +360,15 @@
   
 //   @override
 //   Widget build(BuildContext context) {
+//     // Safety check to ensure TabController is initialized
+//     if (!_tabController.hasListeners) {
+//       return const Scaffold(
+//         body: Center(child: CircularProgressIndicator()),
+//       );
+//     }
+    
 //     return Scaffold(
+//       backgroundColor: Colors.white,
 //       endDrawer: Drawer(
 //         width: 700,
 //         child: _showPostsPage
@@ -253,13 +377,18 @@
 //                 ? _buildGalleryPage()
 //                 : _buildOriginalDrawerContent(),
 //       ),
-//       body: ListView(
-//         shrinkWrap: true,
+//       body: Column(
 //         children: [
 //           Padding(
 //             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
 //             child: TextField(
 //               decoration: InputDecoration(
+//                 enabledBorder: OutlineInputBorder(
+//                   borderSide: BorderSide(color: Color(0xff1B1212)),
+//                 ),
+//                 focusedBorder: OutlineInputBorder(
+//                   borderSide: BorderSide(color: Color(0xff1B1212)),
+//                 ),
 //                 hintText: 'Search by name, email or phone',
 //                 prefixIcon: const Icon(Icons.search),
 //                 border: OutlineInputBorder(
@@ -327,177 +456,42 @@
 //                   ),
 //                 ),
 //                 const Divider(),
+//                 TabBar(
+//                   controller: _tabController,
+//                   onTap: (index) {
+//                     // Safety check to ensure index is valid
+//                     if (index >= 0 && index < 3) {
+//                       setState(() {});
+//                     }
+//                   },
+//                   labelColor: Colors.black,
+//                   unselectedLabelColor: Colors.grey,
+//                   indicatorColor: Colors.blue,
+//                   tabs: const [
+//                     Tab(
+//                       icon: Icon(Icons.person_add,color: Colors.black,),
+//                       text: 'New Teachers',
+                      
+//                     ),
+//                     Tab(
+//                       icon: Icon(Icons.check_circle,color: Colors.green,),
+//                       text: 'Active Teachers',
+//                     ),
+//                     Tab(
+//                       icon: Icon(Icons.cancel,color: Colors.red,),
+//                       text: 'Rejected Teachers',
+//                     ),
+//                   ],
+//                 ),
 //                 Expanded(
-//                   child: isLoading
-//                       ? const Center(child: CircularProgressIndicator())
-//                       : errorMessage != null
-//                           ? Center(
-//                               child: Column(
-//                                 mainAxisSize: MainAxisSize.min,
-//                                 children: [
-//                                   Text(errorMessage!),
-//                                   ElevatedButton(
-//                                     onPressed: () {
-//                                       _hasFetched = false;
-//                                       _fetchTeachers();
-//                                     },
-//                                     child: const Text('Retry'),
-//                                   ),
-//                                 ],
-//                               ),
-//                             )
-//                           : _filteredTeachers.isEmpty
-//                               ? const Center(child: Text('No teachers found'))
-//                               : RefreshIndicator(
-//                                   onRefresh: () async {
-//                                     _hasFetched = false;
-//                                     await _fetchTeachers();
-//                                   },
-//                                   child: Scrollbar(
-//                                     controller: _scrollController,
-//                                     thickness: 8,
-//                                     radius: const Radius.circular(10),
-//                                     child: ListView.builder(
-//                                       controller: _scrollController,
-//                                       itemCount: _filteredTeachers.length,
-//                                       itemBuilder: (context, index) {
-//                                         final t = _filteredTeachers[index];
-//                                         return ListTile(
-//                                           contentPadding:
-//                                               const EdgeInsets.symmetric(horizontal: 20),
-//                                           trailing: SizedBox(
-//                                             width: 279,
-//                                             child: Row(
-//                                               mainAxisSize: MainAxisSize.min,
-//                                               children: [
-//                                                 Expanded(
-//                                                   child: TextButton(
-//                                                     onPressed: t.isVerified
-//                                                         ? null
-//                                                         : () => _approve(t.docId),
-//                                                     child: Text(
-//                                                       'Accept',
-//                                                       style: TextStyle(
-//                                                         color: t.isVerified
-//                                                             ? Colors.grey
-//                                                             : Colors.green,
-//                                                         fontSize: 20,
-//                                                       ),
-//                                                     ),
-//                                                   ),
-//                                                 ),
-//                                                 Expanded(
-//                                                   child: TextButton(
-//                                                     onPressed: () {
-//                                                       showDialog(
-//                                                         context: context,
-//                                                         builder: (context) {
-//                                                           final ctrl = TextEditingController();
-//                                                           return AlertDialog(
-//                                                             backgroundColor: Colors.white,
-//                                                             title:
-//                                                                 const Text('Reason for rejection'),
-//                                                             content: TextFormField(
-//                                                               controller: ctrl,
-//                                                               decoration: InputDecoration(
-//                                                                 border: OutlineInputBorder(
-//                                                                   borderRadius:
-//                                                                       BorderRadius.circular(10),
-//                                                                 ),
-//                                                                 hintText: 'Enter reason',
-//                                                               ),
-//                                                             ),
-//                                                             actions: [
-//                                                               TextButton(
-//                                                                 onPressed: () =>
-//                                                                     Navigator.pop(context),
-//                                                                 child: const Text(
-//                                                                   'Cancel',
-//                                                                   style: TextStyle(
-//                                                                       color: Colors.red,
-//                                                                       fontSize: 20),
-//                                                                 ),
-//                                                               ),
-//                                                               TextButton(
-//                                                                 onPressed: () {
-//                                                                   _reject(
-//                                                                       t.docId, ctrl.text.trim());
-//                                                                   Navigator.pop(context);
-//                                                                 },
-//                                                                 child: const Text(
-//                                                                   'Reject',
-//                                                                   style: TextStyle(
-//                                                                       color: Colors.red,
-//                                                                       fontSize: 20),
-//                                                                 ),
-//                                                               ),
-//                                                             ],
-//                                                           );
-//                                                         },
-//                                                       );
-//                                                     },
-//                                                     child: const Text(
-//                                                       'Delete',
-//                                                       style:
-//                                                           TextStyle(color: Colors.red, fontSize: 20),
-//                                                     ),
-//                                                   ),
-//                                                 ),
-//                                                 Expanded(
-//                                                   child: TextButton(
-//                                                     onPressed: () {
-//                                                       setState(() {
-//                                                         _selectedTeacherDocId = t.docId;
-//                                                         _showPostsPage = false;
-//                                                         _showGalleryPage = true;
-//                                                       });
-//                                                       Scaffold.of(context).openEndDrawer();
-//                                                     },
-//                                                     child: const Text(
-//                                                       'View',
-//                                                       style: TextStyle(
-//                                                           color: Colors.black, fontSize: 20),
-//                                                     ),
-//                                                   ),
-//                                                 ),
-//                                               ],
-//                                             ),
-//                                           ),
-//                                           title: Row(
-//                                             mainAxisSize: MainAxisSize.min,
-//                                             children: [
-//                                               CircleAvatar(
-//                                                 radius: 20,
-//                                                 backgroundColor: Colors.amber,
-//                                                 backgroundImage: t.profileImageUrl != null
-//                                                     ? NetworkImage(t.profileImageUrl!)
-//                                                     : null,
-//                                                 child: t.profileImageUrl == null
-//                                                     ? const Icon(Icons.person,
-//                                                         size: 20, color: Colors.white)
-//                                                     : null,
-//                                               ),
-//                                               const SizedBox(width: 10),
-//                                               Expanded(
-//                                                 child: Column(
-//                                                   crossAxisAlignment: CrossAxisAlignment.start,
-//                                                   children: [
-//                                                     Text('Name: ${t.name}',
-//                                                         overflow: TextOverflow.ellipsis),
-//                                                     Text('Email: ${t.email}',
-//                                                         overflow: TextOverflow.ellipsis),
-//                                                     Text('Phone: ${t.phoneNumber}',
-//                                                         overflow: TextOverflow.ellipsis),
-//                                                   ],
-//                                                 ),
-//                                               ),
-//                                             ],
-//                                           ),
-//                                         );
-//                                       },
-//                                     ),
-//                                   ),
-//                                 ),
+//                   child: TabBarView(
+//                     controller: _tabController,
+//                     children: [
+//                       _buildTeachersList(),
+//                       _buildTeachersList(),
+//                       _buildTeachersList(),
+//                     ],
+//                   ),
 //                 ),
 //               ],
 //             ),
@@ -505,6 +499,246 @@
 //         ],
 //       ),
 //     );
+//   }
+
+//   Widget _buildTeachersList() {
+//     // Cache the filtered teachers to prevent multiple calls
+//     final filteredTeachers = _filteredTeachers;
+    
+//     return isLoading
+//         ? const Center(child: CircularProgressIndicator())
+//         : errorMessage != null
+//             ? Center(
+//                 child: Column(
+//                   mainAxisSize: MainAxisSize.min,
+//                   children: [
+//                     Text(errorMessage!),
+//                     ElevatedButton(
+//                       onPressed: () {
+//                         _hasFetched = false;
+//                         _fetchTeachers();
+//                       },
+//                       child: const Text('Retry'),
+//                     ),
+//                   ],
+//                 ),
+//               )
+//             : filteredTeachers.isEmpty
+//                 ? const Center(child: Text('No teachers found'))
+//                 : RefreshIndicator(
+//                     onRefresh: () async {
+//                       _hasFetched = false;
+//                       await _fetchTeachers();
+//                     },
+//                     child: Scrollbar(
+//                       controller: _scrollController,
+//                       thickness: 8,
+//                       radius: const Radius.circular(10),
+//                       child: ListView.builder(
+//                         controller: _scrollController,
+//                         itemCount: filteredTeachers.length,
+//                         itemBuilder: (context, index) {
+//                           // Add bounds checking
+//                           if (index >= filteredTeachers.length) {
+//                             return const SizedBox.shrink();
+//                           }
+                          
+//                           // Additional safety check
+//                           if (index < 0) {
+//                             return const SizedBox.shrink();
+//                           }
+                          
+//                           final t = filteredTeachers[index];
+                          
+//                           // Validate teacher object
+//                           if (t == null) {
+//                             return const SizedBox.shrink();
+//                           }
+                          
+//                           return ListTile(
+//                             contentPadding:
+//                                 const EdgeInsets.symmetric(horizontal: 20),
+//                             trailing: SizedBox(
+//                               width: 279,
+//                               child: Row(
+//                                 mainAxisSize: MainAxisSize.min,
+//                                 children: [
+//                                   // Show Accept button only for new teachers (tab 0)
+//                                   if (_tabController.index == 0)
+//                                     Expanded(
+//                                       child: TextButton(
+//                                         onPressed: t.isVerified
+//                                             ? null
+//                                             : () => _approve(t.docId),
+//                                         child: Text(
+//                                           'Accept',
+//                                           style: TextStyle(
+//                                             color: t.isVerified
+//                                                 ? Colors.grey
+//                                                 : Colors.green,
+//                                             fontSize: 20,
+//                                           ),
+//                                         ),
+//                                       ),
+//                                     ),
+//                                   // Show Delete/Reject button for new teachers (tab 0)
+//                                   if (_tabController.index == 0)
+//                                     Expanded(
+//                                       child: TextButton(
+//                                         onPressed: () {
+//                                           showDialog(
+//                                             context: context,
+//                                             builder: (context) {
+//                                               final ctrl = TextEditingController();
+//                                               return AlertDialog(
+//                                                 backgroundColor: Colors.white,
+//                                                 title:
+//                                                     const Text('Reason for rejection'),
+//                                                 content: TextFormField(
+//                                                   controller: ctrl,
+//                                                   decoration: InputDecoration(
+//                                                     border: OutlineInputBorder(
+//                                                       borderRadius:
+//                                                           BorderRadius.circular(10),
+//                                                     ),
+//                                                     hintText: 'Enter reason',
+//                                                   ),
+//                                                 ),
+//                                                 actions: [
+//                                                   TextButton(
+//                                                     onPressed: () =>
+//                                                         Navigator.pop(context),
+//                                                     child: const Text(
+//                                                       'Cancel',
+//                                                       style: TextStyle(
+//                                                           color: Colors.red,
+//                                                           fontSize: 20),
+//                                                     ),
+//                                                   ),
+//                                                   TextButton(
+//                                                     onPressed: () {
+//                                                       _reject(
+//                                                           t.docId, ctrl.text.trim());
+//                                                       Navigator.pop(context);
+//                                                     },
+//                                                     child: const Text(
+//                                                       'Reject',
+//                                                       style: TextStyle(
+//                                                           color: Colors.red,
+//                                                           fontSize: 20),
+//                                                     ),
+//                                                   ),
+//                                                 ],
+//                                               );
+//                                             },
+//                                           );
+//                                         },
+//                                         child: const Text(
+//                                           'Delete',
+//                                           style:
+//                                               TextStyle(color: Colors.red, fontSize: 20),
+//                                         ),
+//                                       ),
+//                                     ),
+//                                   // Show Reactivate button for rejected teachers (tab 2)
+//                                   if (_tabController.index == 2)
+//                                     Expanded(
+//                                       child: TextButton(
+//                                         onPressed: () => _reactivate(t.docId),
+//                                         child: const Text(
+//                                           'Reactivate',
+//                                           style: TextStyle(
+//                                               color: Colors.blue, fontSize: 20),
+//                                         ),
+//                                       ),
+//                                     ),
+//                                   // Show View button for all tabs
+//                                   Expanded(
+//                                     child: TextButton(
+//                                       onPressed: () {
+//                                         setState(() {
+//                                           _selectedTeacherDocId = t.docId;
+//                                           _showPostsPage = false;
+//                                           _showGalleryPage = true;
+//                                         });
+//                                         Scaffold.of(context).openEndDrawer();
+//                                       },
+//                                       child: const Text(
+//                                         'View',
+//                                         style: TextStyle(
+//                                             color: Colors.black, fontSize: 20),
+//                                       ),
+//                                     ),
+//                                   ),
+//                                 ],
+//                               ),
+//                             ),
+//                             title: Row(
+//                               mainAxisSize: MainAxisSize.min,
+//                               children: [
+//                                 CircleAvatar(
+//                                   radius: 20,
+//                                   backgroundColor: Colors.amber,
+//                                   backgroundImage: t.profileImageUrl != null
+//                                       ? NetworkImage(t.profileImageUrl!)
+//                                       : null,
+//                                   child: t.profileImageUrl == null
+//                                       ? const Icon(Icons.person,
+//                                           size: 20, color: Colors.white)
+//                                       : null,
+//                                 ),
+//                                 const SizedBox(width: 10),
+//                                 Expanded(
+//                                   child: Column(
+//                                     crossAxisAlignment: CrossAxisAlignment.start,
+//                                     children: [
+//                                       Text('Name: ${t.name}',
+//                                           overflow: TextOverflow.ellipsis),
+//                                       Text('Email: ${t.email}',
+//                                           overflow: TextOverflow.ellipsis),
+//                                       Text('Phone: ${t.phoneNumber}',
+//                                           overflow: TextOverflow.ellipsis),
+//                                       // Show status indicator
+//                                       Container(
+//                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+//                                         decoration: BoxDecoration(
+//                                           color: _getStatusColor(t),
+//                                           borderRadius: BorderRadius.circular(12),
+//                                         ),
+//                                         child: Text(
+//                                           _getStatusText(t),
+//                                           style: const TextStyle(
+//                                             color: Colors.white,
+//                                             fontSize: 12,
+//                                             fontWeight: FontWeight.bold,
+//                                           ),
+//                                         ),
+//                                       ),
+//                                       // Show rejection reason for rejected teachers
+//                                       if (t.rejectionReason != null && t.rejectionReason!.isNotEmpty)
+//                                         Padding(
+//                                           padding: const EdgeInsets.only(top: 4),
+//                                           child: Text(
+//                                             'Reason: ${t.rejectionReason}',
+//                                             style: const TextStyle(
+//                                               color: Colors.red,
+//                                               fontSize: 12,
+//                                               fontStyle: FontStyle.italic,
+//                                             ),
+//                                             maxLines: 2,
+//                                             overflow: TextOverflow.ellipsis,
+//                                           ),
+//                                         ),
+//                                     ],
+//                                   ),
+//                                 ),
+//                               ],
+//                             ),
+//                           );
+//                         },
+//                       ),
+//                     ),
+//                   );
 //   }
 
 //   Widget _buildOriginalDrawerContent() {
@@ -669,12 +903,28 @@
 //         List<String> images = [];
 //         List<String> videos = [];
 
+//         // Safe conversion for media files
+//         String? getMediaUrl(dynamic mediaFile) {
+//           if (mediaFile == null) return null;
+//           if (mediaFile is String) return mediaFile;
+//           if (mediaFile is Map) {
+//             // If it's a map, try to get the URL from common fields
+//             if (mediaFile['url'] != null) return mediaFile['url'].toString();
+//             if (mediaFile['link'] != null) return mediaFile['link'].toString();
+//             if (mediaFile['src'] != null) return mediaFile['src'].toString();
+//             // If no common field found, convert the whole map to string
+//             return mediaFile.toString();
+//           }
+//           return mediaFile.toString();
+//         }
+
 //         for (var postDoc in posts) {
 //           final postData = postDoc.data() as Map<String, dynamic>;
 //           final List<dynamic>? mediaFiles = postData['mediaFiles'];
 //           if (mediaFiles != null) {
-//             for (var mediaUrl in mediaFiles) {
-//               if (mediaUrl is String && mediaUrl.isNotEmpty) {
+//             for (var mediaFile in mediaFiles) {
+//               final mediaUrl = getMediaUrl(mediaFile);
+//               if (mediaUrl != null && mediaUrl.isNotEmpty) {
 //                 if (_isVideoUrl(mediaUrl)) {
 //                   videos.add(mediaUrl);
 //                 } else {
@@ -780,7 +1030,7 @@
 //       backgroundColor: Colors.white,
 //       appBar: AppBar(
 //         backgroundColor: Colors.transparent,
-//         automaticallyImplyLeading: false, // remove default back button
+//         automaticallyImplyLeading: false,
 //         title: const Text('Posts'),
 //         leading: IconButton(
 //           icon: const Icon(Icons.arrow_back_ios_new),
@@ -793,6 +1043,7 @@
 //         ),
 //       ),
 //       body: StreamBuilder<QuerySnapshot>(
+        
 //         stream: FirebaseFirestore.instance
 //             .collection('posts')
 //             .where('userId', isEqualTo: _selectedTeacherDocId)
@@ -828,6 +1079,28 @@
 //   }
 
 //   Widget _buildPostGridItem(String postId, Map<String, dynamic> postData) {
+//     // Safe conversion for media files
+//     String? getMediaUrl(dynamic mediaFile) {
+//       if (mediaFile == null) return null;
+//       if (mediaFile is String) return mediaFile;
+//       if (mediaFile is Map) {
+//         // If it's a map, try to get the URL from common fields
+//         if (mediaFile['url'] != null) return mediaFile['url'].toString();
+//         if (mediaFile['link'] != null) return mediaFile['link'].toString();
+//         if (mediaFile['src'] != null) return mediaFile['src'].toString();
+//         // If no common field found, convert the whole map to string
+//         return mediaFile.toString();
+//       }
+//       return mediaFile.toString();
+//     }
+    
+//     // Get the first media file URL safely
+//     String? firstMediaUrl;
+//     final mediaFiles = postData['mediaFiles'];
+//     if (mediaFiles != null && mediaFiles.isNotEmpty) {
+//       firstMediaUrl = getMediaUrl(mediaFiles[0]);
+//     }
+    
 //     return Container(
 //       margin: const EdgeInsets.all(4),
 //       decoration: BoxDecoration(
@@ -845,23 +1118,39 @@
 //               maxLines: 3,
 //               overflow: TextOverflow.ellipsis,
 //             ),
+//           // NEW: Show description if available
+//           if (postData['description'] != null && postData['description'].isNotEmpty)
+//             Padding(
+//               padding: const EdgeInsets.only(top: 6.0, bottom: 6.0),
+//               child: Text(
+//                 postData['description'],
+//                 style: const TextStyle(fontSize: 14, color: Colors.black54),
+//                 maxLines: 2,
+//                 overflow: TextOverflow.ellipsis,
+//               ),
+//             ),
 //           const SizedBox(height: 8),
-//           if (postData['mediaFiles'] != null && postData['mediaFiles'].isNotEmpty)
+//           if (firstMediaUrl != null && firstMediaUrl.isNotEmpty)
 //             Expanded(
 //               child: ClipRRect(
 //                 borderRadius: BorderRadius.circular(10),
 //                 child: Image.network(
-//                   postData['mediaFiles'][0],
+//                   firstMediaUrl,
 //                   fit: BoxFit.cover,
 //                   width: double.infinity,
+//                   errorBuilder: (context, error, stackTrace) {
+//                     return Container(
+//                       color: Colors.grey[300],
+//                       child: const Icon(Icons.broken_image, size: 50),
+//                     );
+//                   },
 //                 ),
 //               ),
 //             ),
-//              IconButton(
+//           IconButton(
 //             onPressed: () {
-//               final imageUrl = postData['mediaFiles'][0];
-//               if (imageUrl != null && imageUrl.isNotEmpty) {
-//                 _downloadImage(imageUrl);
+//               if (firstMediaUrl != null && firstMediaUrl.isNotEmpty) {
+//                 _downloadImage(firstMediaUrl);
 //               } else {
 //                 ScaffoldMessenger.of(context).showSnackBar(
 //                   const SnackBar(content: Text('No image to download')),
@@ -873,6 +1162,26 @@
 //         ],
 //       ),
 //     );
+//   }
+
+//   String _getStatusText(Teacher teacher) {
+//     if (teacher.isVerified) {
+//       return 'Active';
+//     } else if (_isRejected(teacher)) {
+//       return 'Rejected';
+//     } else {
+//       return 'New';
+//     }
+//   }
+
+//   Color _getStatusColor(Teacher teacher) {
+//     if (teacher.isVerified) {
+//       return Colors.green;
+//     } else if (_isRejected(teacher)) {
+//       return Colors.red;
+//     } else {
+//       return Colors.amber;
+//     }
 //   }
 // }
 
@@ -969,7 +1278,8 @@ class Teacher {
   final String? verificationVideo;
   final String? verificationDocument;
   final String? verificationDescription;
-  final bool isVerified;
+  final bool isApproved; // changed from isVerified
+  final String? rejectionReason;
 
   Teacher({
     required this.name,
@@ -980,21 +1290,42 @@ class Teacher {
     this.verificationVideo,
     this.verificationDocument,
     this.verificationDescription,
-    required this.isVerified,
+    required this.isApproved, // changed here
+    this.rejectionReason,
   });
 
   factory Teacher.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
+    
+    String? rejectionReason;
+    final rejectionReasonData = data['rejectionReason'];
+    if (rejectionReasonData != null) {
+      if (rejectionReasonData is String) {
+        rejectionReason = rejectionReasonData;
+      } else if (rejectionReasonData is Map) {
+        rejectionReason = rejectionReasonData.toString();
+      } else {
+        rejectionReason = rejectionReasonData.toString();
+      }
+    }
+    
+    String? safeStringConversion(dynamic value) {
+      if (value == null) return null;
+      if (value is String) return value;
+      return value.toString();
+    }
+    
     return Teacher(
       name: data['name']?.toString() ?? 'No name',
       email: data['email']?.toString() ?? 'No email',
       phoneNumber: data['phoneNumber']?.toString() ?? 'No phone number',
       docId: doc.id,
-      profileImageUrl: data['profileImageUrl'] as String?,
-      verificationVideo: data['verificationVideo'] as String?,
-      verificationDocument: data['verificationDocument'] as String?,
-      verificationDescription: data['verificationDescription'] as String?,
-      isVerified: data['isVerified'] == true,
+      profileImageUrl: safeStringConversion(data['profileImageUrl']),
+      verificationVideo: safeStringConversion(data['verificationVideo']),
+      verificationDocument: safeStringConversion(data['verificationDocument']),
+      verificationDescription: safeStringConversion(data['verificationDescription']),
+      isApproved: data['isApproved'] == true, // changed here
+      rejectionReason: rejectionReason,
     );
   }
 }
@@ -1006,7 +1337,7 @@ class Teachers extends StatefulWidget {
   _TeachersState createState() => _TeachersState();
 }
 
-class _TeachersState extends State<Teachers> {
+class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   bool _showPostsPage = false;
   bool _showGalleryPage = false;
@@ -1017,10 +1348,17 @@ class _TeachersState extends State<Teachers> {
   bool _hasFetched = false;
   String? _selectedTeacherDocId;
   String _searchQuery = '';
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     _initializeFirebase();
   }
 
@@ -1044,7 +1382,17 @@ class _TeachersState extends State<Teachers> {
           .get()
           .timeout(const Duration(seconds: 15));
 
-      teachers = snapshot.docs.map((doc) => Teacher.fromFirestore(doc)).toList();
+      List<Teacher> parsedTeachers = [];
+      for (var doc in snapshot.docs) {
+        try {
+          final teacher = Teacher.fromFirestore(doc);
+          parsedTeachers.add(teacher);
+        } catch (e) {
+          print('Error parsing teacher ${doc.id}: $e');
+        }
+      }
+      
+      teachers = parsedTeachers;
 
       setState(() => isLoading = false);
     } on FirebaseException catch (e) {
@@ -1073,7 +1421,10 @@ class _TeachersState extends State<Teachers> {
 
   Future<void> _approve(String docId) async {
     try {
-      await _usersCollection.doc(docId).update({'isVerified': true});
+      await _usersCollection.doc(docId).update({
+        'isApproved': true, // changed here
+        'rejectionReason': null,
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Teacher approved')),
       );
@@ -1089,7 +1440,7 @@ class _TeachersState extends State<Teachers> {
   Future<void> _reject(String docId, String reason) async {
     try {
       await _usersCollection.doc(docId).update({
-        'isVerified': false,
+        'isApproved': false, // changed here
         'rejectionReason': reason,
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1100,6 +1451,24 @@ class _TeachersState extends State<Teachers> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Reject failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _reactivate(String docId) async {
+    try {
+      await _usersCollection.doc(docId).update({
+        'isApproved': false, // changed here
+        'rejectionReason': null,
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Teacher reactivated')),
+      );
+      _hasFetched = false;
+      await _fetchTeachers();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reactivate failed: $e')),
       );
     }
   }
@@ -1122,6 +1491,7 @@ class _TeachersState extends State<Teachers> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
   
@@ -1164,13 +1534,54 @@ class _TeachersState extends State<Teachers> {
   }
   
   List<Teacher> get _filteredTeachers {
-    if (_searchQuery.isEmpty) return teachers;
-    final q = _searchQuery.toLowerCase();
-    return teachers.where((t) {
-      return t.name.toLowerCase().contains(q) ||
-          t.email.toLowerCase().contains(q) ||
-          t.phoneNumber.toLowerCase().contains(q);
-    }).toList();
+    try {
+      if (_searchQuery.isEmpty) {
+        final teachersByTab = _getTeachersByTab();
+        return teachersByTab.isNotEmpty ? teachersByTab : [];
+      }
+      
+      final q = _searchQuery.toLowerCase();
+      final teachersByTab = _getTeachersByTab();
+      final filtered = teachersByTab.where((t) {
+        return t.name.toLowerCase().contains(q) ||
+            t.email.toLowerCase().contains(q) ||
+            t.phoneNumber.toLowerCase().contains(q);
+      }).toList();
+      
+      return filtered.isNotEmpty ? filtered : [];
+    } catch (e) {
+      print('Error in _filteredTeachers: $e');
+      return [];
+    }
+  }
+
+  List<Teacher> _getTeachersByTab() {
+    try {
+      if (!_tabController.hasListeners || _tabController.length != 3) {
+        return teachers;
+      }
+      if (_tabController.index < 0 || _tabController.index >= 3) {
+        return teachers;
+      }
+      
+      switch (_tabController.index) {
+        case 0:
+          return teachers.where((t) => !t.isApproved && !_isRejected(t)).toList();
+        case 1:
+          return teachers.where((t) => t.isApproved).toList();
+        case 2:
+          return teachers.where((t) => _isRejected(t)).toList();
+        default:
+          return teachers;
+      }
+    } catch (e) {
+      print('Error in _getTeachersByTab: $e');
+      return teachers;
+    }
+  }
+
+  bool _isRejected(Teacher teacher) {
+    return teacher.rejectionReason != null;
   }
 
   bool _isVideoUrl(String url) {
@@ -1196,6 +1607,12 @@ class _TeachersState extends State<Teachers> {
   
   @override
   Widget build(BuildContext context) {
+    if (!_tabController.hasListeners) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
     return Scaffold(
       backgroundColor: Colors.white,
       endDrawer: Drawer(
@@ -1206,19 +1623,18 @@ class _TeachersState extends State<Teachers> {
                 ? _buildGalleryPage()
                 : _buildOriginalDrawerContent(),
       ),
-      body: ListView(
-        shrinkWrap: true,
+      body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
               decoration: InputDecoration(
-                         enabledBorder: OutlineInputBorder(
-      borderSide: BorderSide(color: Color(0xff1B1212)),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderSide: BorderSide(color: Color(0xff1B1212)),
-    ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xff1B1212)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xff1B1212)),
+                ),
                 hintText: 'Search by name, email or phone',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
@@ -1286,177 +1702,40 @@ class _TeachersState extends State<Teachers> {
                   ),
                 ),
                 const Divider(),
+                TabBar(
+                  controller: _tabController,
+                  onTap: (index) {
+                    if (index >= 0 && index < 3) {
+                      setState(() {});
+                    }
+                  },
+                  labelColor: Colors.black,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.blue,
+                  tabs: const [
+                    Tab(
+                      icon: Icon(Icons.person_add,color: Colors.black,),
+                      text: 'New Teachers',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.check_circle,color: Colors.green,),
+                      text: 'Active Teachers',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.cancel,color: Colors.red,),
+                      text: 'Rejected Teachers',
+                    ),
+                  ],
+                ),
                 Expanded(
-                  child: isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : errorMessage != null
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(errorMessage!),
-                                  ElevatedButton(
-                                    onPressed: () {
-                                      _hasFetched = false;
-                                      _fetchTeachers();
-                                    },
-                                    child: const Text('Retry'),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : _filteredTeachers.isEmpty
-                              ? const Center(child: Text('No teachers found'))
-                              : RefreshIndicator(
-                                  onRefresh: () async {
-                                    _hasFetched = false;
-                                    await _fetchTeachers();
-                                  },
-                                  child: Scrollbar(
-                                    controller: _scrollController,
-                                    thickness: 8,
-                                    radius: const Radius.circular(10),
-                                    child: ListView.builder(
-                                      controller: _scrollController,
-                                      itemCount: _filteredTeachers.length,
-                                      itemBuilder: (context, index) {
-                                        final t = _filteredTeachers[index];
-                                        return ListTile(
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(horizontal: 20),
-                                          trailing: SizedBox(
-                                            width: 279,
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Expanded(
-                                                  child: TextButton(
-                                                    onPressed: t.isVerified
-                                                        ? null
-                                                        : () => _approve(t.docId),
-                                                    child: Text(
-                                                      'Accept',
-                                                      style: TextStyle(
-                                                        color: t.isVerified
-                                                            ? Colors.grey
-                                                            : Colors.green,
-                                                        fontSize: 20,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                Expanded(
-                                                  child: TextButton(
-                                                    onPressed: () {
-                                                      showDialog(
-                                                        context: context,
-                                                        builder: (context) {
-                                                          final ctrl = TextEditingController();
-                                                          return AlertDialog(
-                                                            backgroundColor: Colors.white,
-                                                            title:
-                                                                const Text('Reason for rejection'),
-                                                            content: TextFormField(
-                                                              controller: ctrl,
-                                                              decoration: InputDecoration(
-                                                                border: OutlineInputBorder(
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(10),
-                                                                ),
-                                                                hintText: 'Enter reason',
-                                                              ),
-                                                            ),
-                                                            actions: [
-                                                              TextButton(
-                                                                onPressed: () =>
-                                                                    Navigator.pop(context),
-                                                                child: const Text(
-                                                                  'Cancel',
-                                                                  style: TextStyle(
-                                                                      color: Colors.red,
-                                                                      fontSize: 20),
-                                                                ),
-                                                              ),
-                                                              TextButton(
-                                                                onPressed: () {
-                                                                  _reject(
-                                                                      t.docId, ctrl.text.trim());
-                                                                  Navigator.pop(context);
-                                                                },
-                                                                child: const Text(
-                                                                  'Reject',
-                                                                  style: TextStyle(
-                                                                      color: Colors.red,
-                                                                      fontSize: 20),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          );
-                                                        },
-                                                      );
-                                                    },
-                                                    child: const Text(
-                                                      'Delete',
-                                                      style:
-                                                          TextStyle(color: Colors.red, fontSize: 20),
-                                                    ),
-                                                  ),
-                                                ),
-                                                Expanded(
-                                                  child: TextButton(
-                                                    onPressed: () {
-                                                      setState(() {
-                                                        _selectedTeacherDocId = t.docId;
-                                                        _showPostsPage = false;
-                                                        _showGalleryPage = true;
-                                                      });
-                                                      Scaffold.of(context).openEndDrawer();
-                                                    },
-                                                    child: const Text(
-                                                      'View',
-                                                      style: TextStyle(
-                                                          color: Colors.black, fontSize: 20),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          title: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              CircleAvatar(
-                                                radius: 20,
-                                                backgroundColor: Colors.amber,
-                                                backgroundImage: t.profileImageUrl != null
-                                                    ? NetworkImage(t.profileImageUrl!)
-                                                    : null,
-                                                child: t.profileImageUrl == null
-                                                    ? const Icon(Icons.person,
-                                                        size: 20, color: Colors.white)
-                                                    : null,
-                                              ),
-                                              const SizedBox(width: 10),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text('Name: ${t.name}',
-                                                        overflow: TextOverflow.ellipsis),
-                                                    Text('Email: ${t.email}',
-                                                        overflow: TextOverflow.ellipsis),
-                                                    Text('Phone: ${t.phoneNumber}',
-                                                        overflow: TextOverflow.ellipsis),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildTeachersList(),
+                      _buildTeachersList(),
+                      _buildTeachersList(),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1464,6 +1743,231 @@ class _TeachersState extends State<Teachers> {
         ],
       ),
     );
+  }
+
+  Widget _buildTeachersList() {
+    final filteredTeachers = _filteredTeachers;
+    
+    return isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : errorMessage != null
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(errorMessage!),
+                    ElevatedButton(
+                      onPressed: () {
+                        _hasFetched = false;
+                        _fetchTeachers();
+                      },
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            : filteredTeachers.isEmpty
+                ? const Center(child: Text('No teachers found'))
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      _hasFetched = false;
+                      await _fetchTeachers();
+                    },
+                    child: Scrollbar(
+                      controller: _scrollController,
+                      thickness: 8,
+                      radius: const Radius.circular(10),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        itemCount: filteredTeachers.length,
+                        itemBuilder: (context, index) {
+                          if (index >= filteredTeachers.length || index < 0) {
+                            return const SizedBox.shrink();
+                          }
+                          
+                          final t = filteredTeachers[index];
+                          if (t == null) {
+                            return const SizedBox.shrink();
+                          }
+                          
+                          return ListTile(
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 20),
+                            trailing: SizedBox(
+                              width: 279,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_tabController.index == 0)
+                                    Expanded(
+                                      child: TextButton(
+                                        onPressed: t.isApproved
+                                            ? null
+                                            : () => _approve(t.docId),
+                                        child: Text(
+                                          'Accept',
+                                          style: TextStyle(
+                                            color: t.isApproved
+                                                ? Colors.grey
+                                                : Colors.green,
+                                            fontSize: 20,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  if (_tabController.index == 0)
+                                    Expanded(
+                                      child: TextButton(
+                                        onPressed: () {
+                                          showDialog(
+                                            context: context,
+                                            builder: (context) {
+                                              final ctrl = TextEditingController();
+                                              return AlertDialog(
+                                                backgroundColor: Colors.white,
+                                                title:
+                                                    const Text('Reason for rejection'),
+                                                content: TextFormField(
+                                                  controller: ctrl,
+                                                  decoration: InputDecoration(
+                                                    border: OutlineInputBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(10),
+                                                    ),
+                                                    hintText: 'Enter reason',
+                                                  ),
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(context),
+                                                    child: const Text(
+                                                      'Cancel',
+                                                      style: TextStyle(
+                                                          color: Colors.red,
+                                                          fontSize: 20),
+                                                    ),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed: () {
+                                                      _reject(
+                                                          t.docId, ctrl.text.trim());
+                                                      Navigator.pop(context);
+                                                    },
+                                                    child: const Text(
+                                                      'Reject',
+                                                      style: TextStyle(
+                                                          color: Colors.red,
+                                                          fontSize: 20),
+                                                    ),
+                                                  ),
+                                                ],
+                                              );
+                                            },
+                                          );
+                                        },
+                                        child: const Text(
+                                          'Delete',
+                                          style:
+                                              TextStyle(color: Colors.red, fontSize: 20),
+                                        ),
+                                      ),
+                                    ),
+                                  if (_tabController.index == 2)
+                                    Expanded(
+                                      child: TextButton(
+                                        onPressed: () => _reactivate(t.docId),
+                                        child: const Text(
+                                          'Reactivate',
+                                          style: TextStyle(
+                                              color: Colors.blue, fontSize: 20),
+                                        ),
+                                      ),
+                                    ),
+                                  Expanded(
+                                    child: TextButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _selectedTeacherDocId = t.docId;
+                                          _showPostsPage = false;
+                                          _showGalleryPage = true;
+                                        });
+                                        Scaffold.of(context).openEndDrawer();
+                                      },
+                                      child: const Text(
+                                        'View',
+                                        style: TextStyle(
+                                            color: Colors.black, fontSize: 20),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            title: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: Colors.amber,
+                                  backgroundImage: t.profileImageUrl != null
+                                      ? NetworkImage(t.profileImageUrl!)
+                                      : null,
+                                  child: t.profileImageUrl == null
+                                      ? const Icon(Icons.person,
+                                          size: 20, color: Colors.white)
+                                      : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Name: ${t.name}',
+                                          overflow: TextOverflow.ellipsis),
+                                      Text('Email: ${t.email}',
+                                          overflow: TextOverflow.ellipsis),
+                                      Text('Phone: ${t.phoneNumber}',
+                                          overflow: TextOverflow.ellipsis),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: _getStatusColor(t),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          _getStatusText(t),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      if (t.rejectionReason != null && t.rejectionReason!.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            'Reason: ${t.rejectionReason}',
+                                            style: const TextStyle(
+                                              color: Colors.red,
+                                              fontSize: 12,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
   }
 
   Widget _buildOriginalDrawerContent() {
@@ -1624,16 +2128,28 @@ class _TeachersState extends State<Teachers> {
 
         final posts = snapshot.data!.docs;
 
-        // Extract images and videos only from posts' mediaFiles
         List<String> images = [];
         List<String> videos = [];
+
+        String? getMediaUrl(dynamic mediaFile) {
+          if (mediaFile == null) return null;
+          if (mediaFile is String) return mediaFile;
+          if (mediaFile is Map) {
+            if (mediaFile['url'] != null) return mediaFile['url'].toString();
+            if (mediaFile['link'] != null) return mediaFile['link'].toString();
+            if (mediaFile['src'] != null) return mediaFile['src'].toString();
+            return mediaFile.toString();
+          }
+          return mediaFile.toString();
+        }
 
         for (var postDoc in posts) {
           final postData = postDoc.data() as Map<String, dynamic>;
           final List<dynamic>? mediaFiles = postData['mediaFiles'];
           if (mediaFiles != null) {
-            for (var mediaUrl in mediaFiles) {
-              if (mediaUrl is String && mediaUrl.isNotEmpty) {
+            for (var mediaFile in mediaFiles) {
+              final mediaUrl = getMediaUrl(mediaFile);
+              if (mediaUrl != null && mediaUrl.isNotEmpty) {
                 if (_isVideoUrl(mediaUrl)) {
                   videos.add(mediaUrl);
                 } else {
@@ -1647,9 +2163,7 @@ class _TeachersState extends State<Teachers> {
         return DefaultTabController(
           length: 2,
           child: Scaffold(
-            backgroundColor: Colors.white,
             appBar: AppBar(
-              backgroundColor: Colors.white,
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new),
                 onPressed: () {
@@ -1754,7 +2268,6 @@ class _TeachersState extends State<Teachers> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        
         stream: FirebaseFirestore.instance
             .collection('posts')
             .where('userId', isEqualTo: _selectedTeacherDocId)
@@ -1790,6 +2303,24 @@ class _TeachersState extends State<Teachers> {
   }
 
   Widget _buildPostGridItem(String postId, Map<String, dynamic> postData) {
+    String? getMediaUrl(dynamic mediaFile) {
+      if (mediaFile == null) return null;
+      if (mediaFile is String) return mediaFile;
+      if (mediaFile is Map) {
+        if (mediaFile['url'] != null) return mediaFile['url'].toString();
+        if (mediaFile['link'] != null) return mediaFile['link'].toString();
+        if (mediaFile['src'] != null) return mediaFile['src'].toString();
+        return mediaFile.toString();
+      }
+      return mediaFile.toString();
+    }
+    
+    String? firstMediaUrl;
+    final mediaFiles = postData['mediaFiles'];
+    if (mediaFiles != null && mediaFiles.isNotEmpty) {
+      firstMediaUrl = getMediaUrl(mediaFiles[0]);
+    }
+    
     return Container(
       margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -1807,7 +2338,6 @@ class _TeachersState extends State<Teachers> {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),
-          // NEW: Show description if available
           if (postData['description'] != null && postData['description'].isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6.0, bottom: 6.0),
@@ -1819,22 +2349,27 @@ class _TeachersState extends State<Teachers> {
               ),
             ),
           const SizedBox(height: 8),
-          if (postData['mediaFiles'] != null && postData['mediaFiles'].isNotEmpty)
+          if (firstMediaUrl != null && firstMediaUrl.isNotEmpty)
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: Image.network(
-                  postData['mediaFiles'][0],
+                  firstMediaUrl,
                   fit: BoxFit.cover,
                   width: double.infinity,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.broken_image, size: 50),
+                    );
+                  },
                 ),
               ),
             ),
           IconButton(
             onPressed: () {
-              final imageUrl = postData['mediaFiles'][0];
-              if (imageUrl != null && imageUrl.isNotEmpty) {
-                _downloadImage(imageUrl);
+              if (firstMediaUrl != null && firstMediaUrl.isNotEmpty) {
+                _downloadImage(firstMediaUrl);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('No image to download')),
@@ -1846,6 +2381,26 @@ class _TeachersState extends State<Teachers> {
         ],
       ),
     );
+  }
+
+  String _getStatusText(Teacher teacher) {
+    if (teacher.isApproved) {
+      return 'Active';
+    } else if (_isRejected(teacher)) {
+      return 'Rejected';
+    } else {
+      return 'New';
+    }
+  }
+
+  Color _getStatusColor(Teacher teacher) {
+    if (teacher.isApproved) {
+      return Colors.green;
+    } else if (_isRejected(teacher)) {
+      return Colors.red;
+    } else {
+      return Colors.amber;
+    }
   }
 }
 

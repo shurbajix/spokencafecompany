@@ -41,6 +41,7 @@ class _HomeState extends State<Home> {
         backgroundColor: Colors.white,
         
         appBar: AppBar(
+          elevation: 0,
           backgroundColor: Colors.white,
           shadowColor: Colors.white,
           leading:  Padding(padding: EdgeInsets.all(10),child:  Image.asset('assets/images/spken_cafe_control.png',scale: 4.9,),),
@@ -52,9 +53,10 @@ class _HomeState extends State<Home> {
           
           items: listhomedashboard
               .map((item) => BottomNavigationBarItem(
+                backgroundColor: Colors.white,
                     icon: Icon(_getIconForItem(item)),
                     label: item,
-                  ))
+                  ),)
               .toList(),
           currentIndex: listhomedashboard.indexOf(_selectedMenu),
           selectedItemColor: Colors.blue,
