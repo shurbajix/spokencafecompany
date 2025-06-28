@@ -18,6 +18,7 @@
  *    - Enhanced loading indicators with progress messages
  *    - Image caching with CachedNetworkImage optimizations
  *    - Video player optimizations with better error handling
+ *    - Full-screen image viewer with zoom and pan capabilities
  * 
  * 4. MEMORY MANAGEMENT:
  *    - Static cache maps for cross-instance data sharing
@@ -39,6 +40,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:gallery_saver/gallery_saver.dart';
 import 'dart:io';
 import 'package:intl/intl.dart';
+import 'package:photo_view/photo_view.dart';
+import 'package:photo_view/photo_view_gallery.dart';
 
 class Gallery extends StatefulWidget {
   const Gallery({super.key});
@@ -791,6 +794,21 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
     return false;
   }
 
+  // Open image viewer with zoom and pan capabilities
+  void _openImageViewer(List<String> imageUrls, int initialIndex, String userName, String timeString) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _ImageViewerPage(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
+          userName: userName,
+          timeString: timeString,
+          onDownload: (url) => _downloadMedia(url, 'image', 'viewer_${DateTime.now().millisecondsSinceEpoch}'),
+        ),
+      ),
+    );
+  }
+
   // Build post card
   Widget _buildPostCard(Map<String, dynamic> post) {
     final postId = post['id'] ?? '';
@@ -867,55 +885,94 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
                 isDownloading: isDownloading,
               );
             } else {
+              // Get all image URLs from this post for gallery view
+              final imageUrls = mediaFiles
+                  .where((media) => !_isVideoUrl(media.toString()))
+                  .map((media) => media.toString())
+                  .where((url) => url.isNotEmpty)
+                  .toList();
+              
+              final currentIndex = imageUrls.indexOf(url);
+              
               return Stack(
                 children: [
-                  CachedNetworkImage(
-                    imageUrl: url,
-                    width: double.infinity,
-                    height: 300,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 800, // Optimize memory usage
-                    memCacheHeight: 600,
-                    maxWidthDiskCache: 1200,
-                    maxHeightDiskCache: 900,
-                    placeholder: (context, url) => Container(
+                  GestureDetector(
+                    onTap: () => _openImageViewer(imageUrls, currentIndex >= 0 ? currentIndex : 0, userName, timeString),
+                    child: CachedNetworkImage(
+                      imageUrl: url,
+                      width: double.infinity,
                       height: 300,
-                      color: Colors.grey[100],
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xff1B1212),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Loading image...',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 12,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 800, // Optimize memory usage
+                      memCacheHeight: 600,
+                      maxWidthDiskCache: 1200,
+                      maxHeightDiskCache: 900,
+                      placeholder: (context, url) => Container(
+                        height: 300,
+                        color: Colors.grey[100],
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xff1B1212),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 12),
+                            Text(
+                              'Loading image...',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        height: 300,
+                        color: Colors.grey[100],
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.broken_image,
+                              size: 48,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Failed to load image',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    errorWidget: (context, url, error) => Container(
-                      height: 300,
-                      color: Colors.grey[100],
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                  ),
+                  // Tap to view indicator
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.broken_image,
-                            size: 48,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 12),
+                          Icon(Icons.zoom_in, color: Colors.white, size: 16),
+                          SizedBox(width: 4),
                           Text(
-                            'Failed to load image',
+                            'Tap to view',
                             style: TextStyle(
-                              color: Colors.grey[600],
+                              color: Colors.white,
                               fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
@@ -1102,6 +1159,289 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
       itemBuilder: (context, index) {
         return _buildPostCard(posts[index]);
       },
+    );
+  }
+}
+
+// Full-screen image viewer with zoom, pan, and gallery navigation
+class _ImageViewerPage extends StatefulWidget {
+  final List<String> imageUrls;
+  final int initialIndex;
+  final String userName;
+  final String timeString;
+  final Function(String) onDownload;
+
+  const _ImageViewerPage({
+    required this.imageUrls,
+    required this.initialIndex,
+    required this.userName,
+    required this.timeString,
+    required this.onDownload,
+  });
+
+  @override
+  State<_ImageViewerPage> createState() => _ImageViewerPageState();
+}
+
+class _ImageViewerPageState extends State<_ImageViewerPage> {
+  late PageController _pageController;
+  int _currentIndex = 0;
+  bool _showControls = true;
+  Timer? _hideControlsTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+    _startHideControlsTimer();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _hideControlsTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startHideControlsTimer() {
+    _hideControlsTimer?.cancel();
+    _hideControlsTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showControls = false;
+        });
+      }
+    });
+  }
+
+  void _toggleControls() {
+    setState(() {
+      _showControls = !_showControls;
+    });
+    if (_showControls) {
+      _startHideControlsTimer();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        onTap: _toggleControls,
+        child: Stack(
+          children: [
+            // Image gallery
+            PhotoViewGallery.builder(
+              pageController: _pageController,
+              itemCount: widget.imageUrls.length,
+              builder: (context, index) {
+                return PhotoViewGalleryPageOptions(
+                  imageProvider: CachedNetworkImageProvider(widget.imageUrls[index]),
+                  minScale: PhotoViewComputedScale.contained,
+                  maxScale: PhotoViewComputedScale.covered * 3.0,
+                  heroAttributes: PhotoViewHeroAttributes(tag: widget.imageUrls[index]),
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.black,
+                      child: const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.broken_image,
+                              color: Colors.white,
+                              size: 64,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Failed to load image',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+              onPageChanged: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+                _startHideControlsTimer();
+              },
+              backgroundDecoration: const BoxDecoration(color: Colors.black),
+              loadingBuilder: (context, event) {
+                return Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            // Top controls (app bar)
+            AnimatedOpacity(
+              opacity: _showControls ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: Container(
+                padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 16,
+                  right: 16,
+                  bottom: 8,
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.7),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.userName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (widget.timeString.isNotEmpty)
+                            Text(
+                              widget.timeString,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download, color: Colors.white),
+                      onPressed: () => widget.onDownload(widget.imageUrls[_currentIndex]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Bottom controls (image counter and navigation)
+            AnimatedOpacity(
+              opacity: _showControls ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    bottom: MediaQuery.of(context).padding.bottom + 16,
+                    top: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.7),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Image counter
+                      if (widget.imageUrls.length > 1)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            '${_currentIndex + 1} of ${widget.imageUrls.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      
+                      // Navigation arrows (for multiple images)
+                      if (widget.imageUrls.length > 1) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.arrow_back_ios,
+                                color: _currentIndex > 0 ? Colors.white : Colors.white.withOpacity(0.3),
+                              ),
+                              onPressed: _currentIndex > 0
+                                  ? () {
+                                      _pageController.previousPage(
+                                        duration: const Duration(milliseconds: 300),
+                                        curve: Curves.easeInOut,
+                                      );
+                                    }
+                                  : null,
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.arrow_forward_ios,
+                                color: _currentIndex < widget.imageUrls.length - 1 
+                                    ? Colors.white 
+                                    : Colors.white.withOpacity(0.3),
+                              ),
+                              onPressed: _currentIndex < widget.imageUrls.length - 1
+                                  ? () {
+                                      _pageController.nextPage(
+                                        duration: const Duration(milliseconds: 300),
+                                        curve: Curves.easeInOut,
+                                      );
+                                    }
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
