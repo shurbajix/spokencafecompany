@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:gallery_saver/gallery_saver.dart';
 
 class Student {
   final String name;
@@ -151,39 +152,154 @@ class _StudentsState extends State<Students> {
 
   Future<void> _downloadImage(String imageUrl) async {
     try {
-      var status = await Permission.storage.request();
-      if (!status.isGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Storage permission is required to download images.')),
+      // Get file extension
+      String extension = '.jpg';
+      if (imageUrl.toLowerCase().contains('.png')) {
+        extension = '.png';
+      } else if (imageUrl.toLowerCase().contains('.jpeg') || imageUrl.toLowerCase().contains('.jpg')) {
+        extension = '.jpg';
+      }
+      
+      String fileName = 'SpokenCafe_${DateTime.now().millisecondsSinceEpoch}$extension';
+
+      // Try multiple download approaches - same as working Gallery logic
+      bool success = false;
+      String savedPath = '';
+
+      // Approach 1: Try saving directly to gallery
+      try {
+        await _requestPermissions();
+        final tempDir = await getTemporaryDirectory();
+        final tempPath = '${tempDir.path}/$fileName';
+
+        // Download file to temp directory
+        Dio dio = Dio();
+        await dio.download(
+          imageUrl,
+          tempPath,
+          onReceiveProgress: (received, total) {
+            if (total != -1) {
+              print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+            }
+          },
         );
-        return;
+
+        // Try to save to gallery
+        final result = await GallerySaver.saveImage(tempPath);
+
+        if (result == true) {
+          success = true;
+          savedPath = 'Gallery';
+        }
+
+        // Clean up temp file
+        try {
+          await File(tempPath).delete();
+        } catch (e) {
+          print('Error deleting temp file: $e');
+        }
+      } catch (e) {
+        print('Gallery save failed: $e');
       }
 
-      Directory directory;
-      if (Platform.isAndroid) {
-        directory = (await getExternalStorageDirectory())!;
-      } else if (Platform.isIOS) {
-        directory = await getApplicationDocumentsDirectory();
+      // Approach 2: If gallery save failed, save to Downloads folder
+      if (!success) {
+        try {
+          Directory? downloadsDir;
+          
+          if (Platform.isAndroid) {
+            downloadsDir = Directory('/storage/emulated/0/Download');
+            if (!await downloadsDir.exists()) {
+              downloadsDir = await getApplicationDocumentsDirectory();
+            }
+          } else {
+            downloadsDir = await getApplicationDocumentsDirectory();
+          }
+
+          if (downloadsDir != null) {
+            final filePath = '${downloadsDir.path}/$fileName';
+            
+            Dio dio = Dio();
+            await dio.download(
+              imageUrl,
+              filePath,
+              onReceiveProgress: (received, total) {
+                if (total != -1) {
+                  print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+                }
+              },
+            );
+
+            success = true;
+            savedPath = Platform.isAndroid ? 'Downloads folder' : 'Documents folder';
+          }
+        } catch (e) {
+          print('Downloads folder save failed: $e');
+        }
+      }
+
+      // Approach 3: If all else fails, save to app directory
+      if (!success) {
+        try {
+          final appDir = await getApplicationDocumentsDirectory();
+          final filePath = '${appDir.path}/$fileName';
+          
+          Dio dio = Dio();
+          await dio.download(
+            imageUrl,
+            filePath,
+            onReceiveProgress: (received, total) {
+              if (total != -1) {
+                print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+              }
+            },
+          );
+
+          success = true;
+          savedPath = 'App folder';
+        } catch (e) {
+          print('App folder save failed: $e');
+        }
+      }
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Image saved to $savedPath successfully! 📷'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
       } else {
-        directory = await getApplicationDocumentsDirectory();
+        throw Exception('All download methods failed');
       }
 
-      String fileName = imageUrl.split('/').last.split('?').first;
-      String savePath = '${directory.path}/$fileName';
-
-      Dio dio = Dio();
-      await dio.download(imageUrl, savePath);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Downloaded to $savePath')),
-      );
-    } catch (e, stacktrace) {
+    } catch (e) {
       print('Download error: $e');
-      print('Stack trace: $stacktrace');
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error downloading image: $e')),
+        SnackBar(
+          content: Text('Download failed: ${e.toString().split(':').last.trim()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
+    }
+  }
+
+  // Request permissions like the working Gallery
+  Future<void> _requestPermissions() async {
+    try {
+      if (Platform.isAndroid) {
+        await Permission.storage.request();
+        await Permission.photos.request();
+        await Permission.videos.request();
+        await Permission.mediaLibrary.request();
+      } else if (Platform.isIOS) {
+        await Permission.photos.request();
+      }
+    } catch (e) {
+      print('Permission request error: $e');
     }
   }
 

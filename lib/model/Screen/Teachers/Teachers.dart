@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
+import 'package:gallery_saver/gallery_saver.dart';
 
 class Teacher {
   final String name;
@@ -90,6 +91,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   String _searchQuery = '';
   late TabController _tabController;
 
+
   @override
   void initState() {
     super.initState();
@@ -100,12 +102,15 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       }
     });
     _initializeFirebase();
+
   }
 
   void _initializeFirebase() {
     _usersCollection = FirebaseFirestore.instance.collection('users');
     _fetchTeachers();
   }
+
+
 
   Future<void> _fetchTeachers() async {
     if (_hasFetched) return;
@@ -237,39 +242,154 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   
   Future<void> _downloadImage(String imageUrl) async {
     try {
-      var status = await Permission.storage.request();
-      if (!status.isGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Storage permission is required to download images.')),
+      // Get file extension
+      String extension = '.jpg';
+      if (imageUrl.toLowerCase().contains('.png')) {
+        extension = '.png';
+      } else if (imageUrl.toLowerCase().contains('.jpeg') || imageUrl.toLowerCase().contains('.jpg')) {
+        extension = '.jpg';
+      }
+      
+      String fileName = 'SpokenCafe_${DateTime.now().millisecondsSinceEpoch}$extension';
+
+      // Try multiple download approaches - same as working Gallery logic
+      bool success = false;
+      String savedPath = '';
+
+      // Approach 1: Try saving directly to gallery
+      try {
+        await _requestPermissions();
+        final tempDir = await getTemporaryDirectory();
+        final tempPath = '${tempDir.path}/$fileName';
+
+        // Download file to temp directory
+        Dio dio = Dio();
+        await dio.download(
+          imageUrl,
+          tempPath,
+          onReceiveProgress: (received, total) {
+            if (total != -1) {
+              print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+            }
+          },
         );
-        return;
+
+        // Try to save to gallery
+        final result = await GallerySaver.saveImage(tempPath);
+
+        if (result == true) {
+          success = true;
+          savedPath = 'Gallery';
+        }
+
+        // Clean up temp file
+        try {
+          await File(tempPath).delete();
+        } catch (e) {
+          print('Error deleting temp file: $e');
+        }
+      } catch (e) {
+        print('Gallery save failed: $e');
       }
 
-      Directory directory;
-      if (Platform.isAndroid) {
-        directory = (await getExternalStorageDirectory())!;
-      } else if (Platform.isIOS) {
-        directory = await getApplicationDocumentsDirectory();
+      // Approach 2: If gallery save failed, save to Downloads folder
+      if (!success) {
+        try {
+          Directory? downloadsDir;
+          
+          if (Platform.isAndroid) {
+            downloadsDir = Directory('/storage/emulated/0/Download');
+            if (!await downloadsDir.exists()) {
+              downloadsDir = await getApplicationDocumentsDirectory();
+            }
+          } else {
+            downloadsDir = await getApplicationDocumentsDirectory();
+          }
+
+          if (downloadsDir != null) {
+            final filePath = '${downloadsDir.path}/$fileName';
+            
+            Dio dio = Dio();
+            await dio.download(
+              imageUrl,
+              filePath,
+              onReceiveProgress: (received, total) {
+                if (total != -1) {
+                  print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+                }
+              },
+            );
+
+            success = true;
+            savedPath = Platform.isAndroid ? 'Downloads folder' : 'Documents folder';
+          }
+        } catch (e) {
+          print('Downloads folder save failed: $e');
+        }
+      }
+
+      // Approach 3: If all else fails, save to app directory
+      if (!success) {
+        try {
+          final appDir = await getApplicationDocumentsDirectory();
+          final filePath = '${appDir.path}/$fileName';
+          
+          Dio dio = Dio();
+          await dio.download(
+            imageUrl,
+            filePath,
+            onReceiveProgress: (received, total) {
+              if (total != -1) {
+                print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+              }
+            },
+          );
+
+          success = true;
+          savedPath = 'App folder';
+        } catch (e) {
+          print('App folder save failed: $e');
+        }
+      }
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Image saved to $savedPath successfully! 📷'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
       } else {
-        directory = await getApplicationDocumentsDirectory();
+        throw Exception('All download methods failed');
       }
 
-      String fileName = imageUrl.split('/').last.split('?').first;
-      String savePath = '${directory.path}/$fileName';
-
-      Dio dio = Dio();
-      await dio.download(imageUrl, savePath);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Downloaded to $savePath')),
-      );
-    } catch (e, stacktrace) {
+    } catch (e) {
       print('Download error: $e');
-      print('Stack trace: $stacktrace');
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error downloading image: $e')),
+        SnackBar(
+          content: Text('Download failed: ${e.toString().split(':').last.trim()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
+    }
+  }
+
+  // Request permissions like the working Gallery
+  Future<void> _requestPermissions() async {
+    try {
+      if (Platform.isAndroid) {
+        await Permission.storage.request();
+        await Permission.photos.request();
+        await Permission.videos.request();
+        await Permission.mediaLibrary.request();
+      } else if (Platform.isIOS) {
+        await Permission.photos.request();
+      }
+    } catch (e) {
+      print('Permission request error: $e');
     }
   }
   
@@ -326,12 +446,16 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
 
   bool _isVideoUrl(String url) {
     final lower = url.toLowerCase();
-    return lower.endsWith('.mp4') ||
-        lower.endsWith('.mov') ||
-        lower.endsWith('.avi') ||
-        lower.endsWith('.wmv') ||
-        lower.endsWith('.flv') ||
-        lower.endsWith('.mkv');
+    return lower.contains('.mp4') ||
+        lower.contains('.mov') ||
+        lower.contains('.avi') ||
+        lower.contains('.wmv') ||
+        lower.contains('.flv') ||
+        lower.contains('.mkv') ||
+        lower.contains('.webm') ||
+        lower.contains('.m4v') ||
+        lower.contains('video') ||
+        lower.contains('.3gp');
   }
 
   void _showFullScreenImage(BuildContext context, String imageUrl) {
@@ -688,7 +812,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                                         setState(() {
                                           _selectedTeacherDocId = t.docId;
                                           _showPostsPage = false;
-                                          _showGalleryPage = true;
+                                          _showGalleryPage = false; // Show teacher details first
                                         });
                                         Scaffold.of(context).openEndDrawer();
                                       },
@@ -797,76 +921,139 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
           );
         }
         final teacher = Teacher.fromFirestore(snapshot.data!);
+        final teacherData = snapshot.data!.data() as Map<String, dynamic>;
+        
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              DrawerHeader(
-                decoration: const BoxDecoration(color: Colors.blue),
-                child: Center(
-                  child: CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.grey,
-                    backgroundImage: teacher.profileImageUrl != null
-                        ? NetworkImage(teacher.profileImageUrl!)
-                        : null,
-                    child: teacher.profileImageUrl == null
-                        ? const Icon(Icons.person, size: 50, color: Colors.white)
-                        : null,
+              // Enhanced Header with Teacher Info
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xff1B1212), Color(0xff2D2D2D)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back, color: Colors.white),
+                            onPressed: () => setState(() => _selectedTeacherDocId = null),
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'Teacher Details',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          const SizedBox(width: 48), // Balance the back button
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      CircleAvatar(
+                        radius: 60,
+                        backgroundColor: Colors.grey[300],
+                        backgroundImage: teacher.profileImageUrl != null
+                            ? NetworkImage(teacher.profileImageUrl!)
+                            : null,
+                        child: teacher.profileImageUrl == null
+                            ? const Icon(Icons.person, size: 60, color: Colors.white)
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        teacher.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(teacher),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _getStatusText(teacher),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Name: ${teacher.name}', style: const TextStyle(fontSize: 20)),
-                    Text('Email: ${teacher.email}', style: const TextStyle(fontSize: 20)),
-                    Text('Phone: ${teacher.phoneNumber}', style: const TextStyle(fontSize: 20)),
-                    const Divider(),
-                  ],
-                ),
+              
+              // Contact Information Section
+              _buildInfoSection(
+                'Contact Information',
+                Icons.contact_page,
+                [
+                  _buildInfoRow('Email', teacher.email, Icons.email),
+                  _buildInfoRow('Phone', teacher.phoneNumber, Icons.phone),
+                  if (teacherData['address'] != null)
+                    _buildInfoRow('Address', teacherData['address'].toString(), Icons.location_on),
+                  if (teacherData['dateOfBirth'] != null)
+                    _buildInfoRow('Date of Birth', teacherData['dateOfBirth'].toString(), Icons.cake),
+                ],
               ),
-              const Text('Verification Video', style: TextStyle(fontSize: 18)),
-              if (teacher.verificationVideo != null)
-                SizedBox(
-                  height: 200,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      // preview video logic here
-                    },
-                    child: const Text('Play Video'),
-                  ),
-                )
-              else
-                const Text('No video submitted'),
-              const Divider(),
-              const Text('Description', style: TextStyle(fontSize: 18)),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(teacher.verificationDescription ?? 'No description'),
+
+              // Professional Information Section
+              _buildInfoSection(
+                'Professional Information',
+                Icons.work,
+                [
+                  if (teacherData['experience'] != null)
+                    _buildInfoRow('Experience', teacherData['experience'].toString(), Icons.timeline),
+                  if (teacherData['education'] != null)
+                    _buildInfoRow('Education', teacherData['education'].toString(), Icons.school),
+                  if (teacherData['specialization'] != null)
+                    _buildInfoRow('Specialization', teacherData['specialization'].toString(), Icons.star),
+                  if (teacherData['languages'] != null)
+                    _buildInfoRow('Languages', teacherData['languages'].toString(), Icons.language),
+                ],
               ),
-              const Divider(),
-              const Text('Document', style: TextStyle(fontSize: 18)),
-              if (teacher.verificationDocument != null)
-                GestureDetector(
-                  onTap: () => showDialog(
-                    context: context,
-                    builder: (_) => Dialog(
-                      child: InteractiveViewer(
-                        child: Image.network(teacher.verificationDocument!),
+
+              // Introduction Video Section
+              _buildVideoSection(teacher),
+
+              // Verification Documents Section
+              _buildDocumentsSection(teacher, teacherData),
+
+              // Description Section
+              if (teacher.verificationDescription != null && teacher.verificationDescription!.isNotEmpty)
+                _buildInfoSection(
+                  'Description',
+                  Icons.description,
+                  [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        teacher.verificationDescription!,
+                        style: const TextStyle(fontSize: 16, height: 1.5),
                       ),
                     ),
-                  ),
-                  child: Image.network(
-                    teacher.verificationDocument!,
-                    height: 200,
-                    fit: BoxFit.cover,
-                  ),
-                )
-              else
-                const Text('No document submitted'),
+                  ],
+                ),
+
+              // Additional Information Section
+              _buildAdditionalInfoSection(teacherData),
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -907,12 +1094,8 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       return const Center(child: Text('No teacher selected'));
     }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('posts')
-          .where('userId', isEqualTo: _selectedTeacherDocId)
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+    return FutureBuilder<Map<String, List<String>>>(
+      future: _fetchTeacherMedia(_selectedTeacherDocId!),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -920,47 +1103,47 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
         if (snapshot.hasError) {
           return Center(child: Text('Error loading gallery: ${snapshot.error}'));
         }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('No posts found'));
+        if (!snapshot.hasData) {
+          return const Center(child: Text('No media found'));
         }
 
-        final posts = snapshot.data!.docs;
+        final mediaData = snapshot.data!;
+        final images = mediaData['images'] ?? [];
+        final videos = mediaData['videos'] ?? [];
 
-        List<String> images = [];
-        List<String> videos = [];
-
-        String? getMediaUrl(dynamic mediaFile) {
-          if (mediaFile == null) return null;
-          if (mediaFile is String) return mediaFile;
-          if (mediaFile is Map) {
-            if (mediaFile['url'] != null) return mediaFile['url'].toString();
-            if (mediaFile['link'] != null) return mediaFile['link'].toString();
-            if (mediaFile['src'] != null) return mediaFile['src'].toString();
-            return mediaFile.toString();
-          }
-          return mediaFile.toString();
-        }
-
-        for (var postDoc in posts) {
-          final postData = postDoc.data() as Map<String, dynamic>;
-          final List<dynamic>? mediaFiles = postData['mediaFiles'];
-          if (mediaFiles != null) {
-            for (var mediaFile in mediaFiles) {
-              final mediaUrl = getMediaUrl(mediaFile);
-              if (mediaUrl != null && mediaUrl.isNotEmpty) {
-                if (_isVideoUrl(mediaUrl)) {
-                  videos.add(mediaUrl);
-                } else {
-                  images.add(mediaUrl);
-                }
-              }
-            }
-          }
+        if (images.isEmpty && videos.isEmpty) {
+          return const Center(child: Text('No media found'));
         }
 
         return DefaultTabController(
           length: 2,
           child: Scaffold(
+            persistentFooterButtons: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                color: Colors.red,
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning, color: Colors.white),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Gallery permission is required to download media',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _requestPermissions,
+                      child: const Text(
+                        'Grant Permission',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             appBar: AppBar(
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new),
@@ -972,6 +1155,14 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                 },
               ),
               title: const Text('Gallery from Posts'),
+              actions: [
+
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  onPressed: _requestPermissions,
+                  tooltip: 'Request Gallery Permissions',
+                ),
+              ],
               bottom: const TabBar(
                 tabs: [
                   Tab(text: 'Images'),
@@ -991,50 +1182,33 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                             crossAxisCount: 3,
                             crossAxisSpacing: 8,
                             mainAxisSpacing: 8,
+                            childAspectRatio: 0.7, // Adjust height to prevent overflow
                           ),
                           itemCount: images.length,
                           itemBuilder: (context, index) {
                             final imageUrl = images[index];
-                            return GestureDetector(
-                              onTap: () => _showFullScreenImage(context, imageUrl),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  imageUrl,
-                                  fit: BoxFit.cover,
-                                  loadingBuilder:
-                                      (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return const Center(
-                                        child: CircularProgressIndicator());
-                                  },
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.broken_image),
-                                ),
-                              ),
-                            );
+                            return _buildImageCard(imageUrl, index);
                           },
                         ),
                       ),
                 videos.isEmpty
                     ? const Center(child: Text('No videos found'))
-                    : ListView.builder(
-                        itemCount: videos.length,
-                        itemBuilder: (context, index) {
-                          final videoUrl = videos[index];
-                          return ListTile(
-                            leading: const Icon(Icons.play_circle_fill,
-                                size: 40, color: Colors.redAccent),
-                            title: Text('Video ${index + 1}'),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    VideoPlayerScreen(videoUrl: videoUrl),
-                              ),
-                            ),
-                          );
-                        },
+                    : Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: GridView.builder(
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 0.8,
+                          ),
+                          itemCount: videos.length,
+                          itemBuilder: (context, index) {
+                            final videoUrl = videos[index];
+                            return _buildVideoCard(videoUrl, index);
+                          },
+                        ),
                       ),
               ],
             ),
@@ -1200,6 +1374,814 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       return Colors.amber;
     }
   }
+
+  // Helper method to build info sections
+  Widget _buildInfoSection(String title, IconData icon, List<Widget> children) {
+    return Card(
+      margin: const EdgeInsets.all(8.0),
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16.0),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(4),
+                topRight: Radius.circular(4),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: const Color(0xff1B1212), size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff1B1212),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  // Helper method to build info rows
+  Widget _buildInfoRow(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.grey[600], size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[800],
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build video section with actual video player
+  Widget _buildVideoSection(Teacher teacher) {
+    return _buildInfoSection(
+      'Introduction Video',
+      Icons.video_library,
+      [
+        if (teacher.verificationVideo != null && teacher.verificationVideo!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: _VideoPlayerWidget(videoUrl: teacher.verificationVideo!),
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'No introduction video submitted',
+              style: TextStyle(
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Build documents section
+  Widget _buildDocumentsSection(Teacher teacher, Map<String, dynamic> teacherData) {
+    List<Widget> documentWidgets = [];
+
+    // Main verification document
+    if (teacher.verificationDocument != null && teacher.verificationDocument!.isNotEmpty) {
+      documentWidgets.add(_buildDocumentCard('Verification Document', teacher.verificationDocument!));
+    }
+
+    // Additional documents from teacherData
+    if (teacherData['idDocument'] != null) {
+      documentWidgets.add(_buildDocumentCard('ID Document', teacherData['idDocument'].toString()));
+    }
+    if (teacherData['certificateDocument'] != null) {
+      documentWidgets.add(_buildDocumentCard('Certificate', teacherData['certificateDocument'].toString()));
+    }
+    if (teacherData['diplomaDocument'] != null) {
+      documentWidgets.add(_buildDocumentCard('Diploma', teacherData['diplomaDocument'].toString()));
+    }
+
+    return _buildInfoSection(
+      'Documents',
+      Icons.document_scanner,
+      documentWidgets.isEmpty
+          ? [
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'No documents submitted',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ]
+          : documentWidgets,
+    );
+  }
+
+  // Build document card
+  Widget _buildDocumentCard(String title, String imageUrl) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => _showFullScreenImage(context, imageUrl),
+            child: Container(
+              height: 200,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(child: CircularProgressIndicator());
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.grey[200],
+                      child: const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.error, color: Colors.red, size: 40),
+                            Text('Failed to load image'),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _downloadImage(imageUrl),
+                  icon: const Icon(Icons.download, size: 16),
+                  label: const Text('Download'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xff1B1212),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _showFullScreenImage(context, imageUrl),
+                  icon: const Icon(Icons.fullscreen, size: 16),
+                  label: const Text('View Full'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build additional information section
+  Widget _buildAdditionalInfoSection(Map<String, dynamic> teacherData) {
+    List<Widget> additionalInfo = [];
+
+    // Add any additional fields from teacherData
+    final fieldsToShow = [
+      'bio',
+      'teachingStyle',
+      'availability',
+      'hourlyRate',
+      'yearsOfExperience',
+      'qualifications',
+      'subjects',
+    ];
+
+    for (String field in fieldsToShow) {
+      if (teacherData[field] != null && teacherData[field].toString().isNotEmpty) {
+        additionalInfo.add(
+          _buildInfoRow(
+            _formatFieldName(field),
+            teacherData[field].toString(),
+            _getIconForField(field),
+          ),
+        );
+      }
+    }
+
+    if (additionalInfo.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return _buildInfoSection(
+      'Additional Information',
+      Icons.info,
+      additionalInfo,
+    );
+  }
+
+  // Helper to format field names
+  String _formatFieldName(String field) {
+    switch (field) {
+      case 'bio':
+        return 'Biography';
+      case 'teachingStyle':
+        return 'Teaching Style';
+      case 'availability':
+        return 'Availability';
+      case 'hourlyRate':
+        return 'Hourly Rate';
+      case 'yearsOfExperience':
+        return 'Years of Experience';
+      case 'qualifications':
+        return 'Qualifications';
+      case 'subjects':
+        return 'Subjects';
+      default:
+        return field.replaceAll(RegExp(r'([A-Z])'), ' \$1').trim();
+    }
+  }
+
+  // Helper to get icons for fields
+  IconData _getIconForField(String field) {
+    switch (field) {
+      case 'bio':
+        return Icons.person_outline;
+      case 'teachingStyle':
+        return Icons.psychology;
+      case 'availability':
+        return Icons.schedule;
+      case 'hourlyRate':
+        return Icons.attach_money;
+      case 'yearsOfExperience':
+        return Icons.timeline;
+      case 'qualifications':
+        return Icons.military_tech;
+      case 'subjects':
+        return Icons.subject;
+      default:
+        return Icons.info_outline;
+    }
+  }
+
+  // Build video card for gallery
+  Widget _buildVideoCard(String videoUrl, int index) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Video thumbnail/preview
+          Expanded(
+            flex: 3,
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
+                ),
+                color: Colors.black,
+              ),
+              child: Stack(
+                children: [
+                  // Video thumbnail (you could add actual thumbnail generation here)
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.grey[800]!,
+                          Colors.grey[900]!,
+                        ],
+                      ),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.video_library,
+                        size: 40,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ),
+                  // Play button overlay
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(50),
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                  // Video indicator
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'VIDEO',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Video info and actions
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Video ${index + 1}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VideoPlayerScreen(videoUrl: videoUrl),
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xff1B1212),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            minimumSize: const Size(0, 28),
+                          ),
+                          child: const Text('Play', style: TextStyle(fontSize: 10)),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 32,
+                        height: 28,
+                        child: IconButton(
+                          onPressed: () => _downloadVideo(videoUrl),
+                          icon: const Icon(Icons.download, size: 14),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Fetch teacher media from all collections
+  Future<Map<String, List<String>>> _fetchTeacherMedia(String teacherId) async {
+    List<String> images = [];
+    List<String> videos = [];
+
+    print('🔍 Fetching media for teacher: $teacherId');
+
+    String? getMediaUrl(dynamic mediaFile) {
+      if (mediaFile == null) return null;
+      if (mediaFile is String) return mediaFile;
+      if (mediaFile is Map) {
+        if (mediaFile['url'] != null) return mediaFile['url'].toString();
+        if (mediaFile['link'] != null) return mediaFile['link'].toString();
+        if (mediaFile['src'] != null) return mediaFile['src'].toString();
+        return mediaFile.toString();
+      }
+      return mediaFile.toString();
+    }
+
+    try {
+      // Fetch from posts collection
+      final postsSnapshot = await FirebaseFirestore.instance
+          .collection('posts')
+          .where('userId', isEqualTo: teacherId)
+          .get();
+
+      print('📝 Found ${postsSnapshot.docs.length} posts');
+
+      for (var postDoc in postsSnapshot.docs) {
+        final postData = postDoc.data();
+        final List<dynamic>? mediaFiles = postData['mediaFiles'];
+        if (mediaFiles != null) {
+          print('📁 Post has ${mediaFiles.length} media files');
+          for (var mediaFile in mediaFiles) {
+            final mediaUrl = getMediaUrl(mediaFile);
+            if (mediaUrl != null && mediaUrl.isNotEmpty) {
+              print('🔗 Media URL: $mediaUrl');
+              if (_isVideoUrl(mediaUrl)) {
+                print('🎬 Added as video');
+                videos.add(mediaUrl);
+              } else {
+                print('🖼️ Added as image');
+                images.add(mediaUrl);
+              }
+            }
+          }
+        }
+      }
+
+      // Fetch from post_media_images collection
+      final imagesSnapshot = await FirebaseFirestore.instance
+          .collection('post_media_images')
+          .where('userId', isEqualTo: teacherId)
+          .get();
+
+      print('🖼️ Found ${imagesSnapshot.docs.length} in post_media_images');
+
+      for (var doc in imagesSnapshot.docs) {
+        final data = doc.data();
+        final url = data['url']?.toString();
+        if (url != null && url.isNotEmpty) {
+          print('🔗 Image URL: $url');
+          images.add(url);
+        }
+      }
+
+      // Fetch from post_media_videos collection
+      final videosSnapshot = await FirebaseFirestore.instance
+          .collection('post_media_videos')
+          .where('userId', isEqualTo: teacherId)
+          .get();
+
+      print('🎬 Found ${videosSnapshot.docs.length} in post_media_videos');
+
+      for (var doc in videosSnapshot.docs) {
+        final data = doc.data();
+        final url = data['url']?.toString();
+        if (url != null && url.isNotEmpty) {
+          print('🔗 Video URL: $url');
+          videos.add(url);
+        }
+      }
+    } catch (e) {
+      print('❌ Error fetching teacher media: $e');
+    }
+
+    print('📊 Final count - Images: ${images.length}, Videos: ${videos.length}');
+    return {
+      'images': images,
+      'videos': videos,
+    };
+  }
+
+  // Build image card for gallery
+  Widget _buildImageCard(String imageUrl, int index) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Image
+          Expanded(
+            flex: 3,
+            child: GestureDetector(
+              onTap: () => _showFullScreenImage(context, imageUrl),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return const Center(child: CircularProgressIndicator());
+                        },
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Center(child: Icon(Icons.broken_image)),
+                      ),
+                    ),
+                    // Image indicator
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'IMAGE',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Image info and actions
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Image ${index + 1}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _showFullScreenImage(context, imageUrl),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xff1B1212),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            minimumSize: const Size(0, 28),
+                          ),
+                          child: const Text('View', style: TextStyle(fontSize: 10)),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 32,
+                        height: 28,
+                        child: IconButton(
+                          onPressed: () => _downloadImage(imageUrl),
+                          icon: const Icon(Icons.download, size: 14),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  // Download video method
+  Future<void> _downloadVideo(String videoUrl) async {
+    try {
+      // Get file extension
+      String extension = '.mp4';
+      if (videoUrl.toLowerCase().contains('.mov')) {
+        extension = '.mov';
+      } else if (videoUrl.toLowerCase().contains('.mp4')) {
+        extension = '.mp4';
+      }
+      
+      String fileName = 'SpokenCafe_${DateTime.now().millisecondsSinceEpoch}$extension';
+
+      // Try multiple download approaches - same as working Gallery logic
+      bool success = false;
+      String savedPath = '';
+
+      // Approach 1: Try saving directly to gallery
+      try {
+        await _requestPermissions();
+        final tempDir = await getTemporaryDirectory();
+        final tempPath = '${tempDir.path}/$fileName';
+
+        // Download file to temp directory
+        Dio dio = Dio();
+        await dio.download(
+          videoUrl,
+          tempPath,
+          onReceiveProgress: (received, total) {
+            if (total != -1) {
+              print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+            }
+          },
+        );
+
+        // Try to save to gallery
+        final result = await GallerySaver.saveVideo(tempPath);
+
+        if (result == true) {
+          success = true;
+          savedPath = 'Gallery';
+        }
+
+        // Clean up temp file
+        try {
+          await File(tempPath).delete();
+        } catch (e) {
+          print('Error deleting temp file: $e');
+        }
+      } catch (e) {
+        print('Gallery save failed: $e');
+      }
+
+      // Approach 2: If gallery save failed, save to Downloads folder
+      if (!success) {
+        try {
+          Directory? downloadsDir;
+          
+          if (Platform.isAndroid) {
+            downloadsDir = Directory('/storage/emulated/0/Download');
+            if (!await downloadsDir.exists()) {
+              downloadsDir = await getApplicationDocumentsDirectory();
+            }
+          } else {
+            downloadsDir = await getApplicationDocumentsDirectory();
+          }
+
+          if (downloadsDir != null) {
+            final filePath = '${downloadsDir.path}/$fileName';
+            
+            Dio dio = Dio();
+            await dio.download(
+              videoUrl,
+              filePath,
+              onReceiveProgress: (received, total) {
+                if (total != -1) {
+                  print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+                }
+              },
+            );
+
+            success = true;
+            savedPath = Platform.isAndroid ? 'Downloads folder' : 'Documents folder';
+          }
+        } catch (e) {
+          print('Downloads folder save failed: $e');
+        }
+      }
+
+      // Approach 3: If all else fails, save to app directory
+      if (!success) {
+        try {
+          final appDir = await getApplicationDocumentsDirectory();
+          final filePath = '${appDir.path}/$fileName';
+          
+          Dio dio = Dio();
+          await dio.download(
+            videoUrl,
+            filePath,
+            onReceiveProgress: (received, total) {
+              if (total != -1) {
+                print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+              }
+            },
+          );
+
+          success = true;
+          savedPath = 'App folder';
+        } catch (e) {
+          print('App folder save failed: $e');
+        }
+      }
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Video saved to $savedPath successfully! 🎬'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        throw Exception('All download methods failed');
+      }
+
+    } catch (e) {
+      print('Download error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: ${e.toString().split(':').last.trim()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 }
 
 class VideoPlayerScreen extends StatefulWidget {
@@ -1270,6 +2252,169 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 ),
               )
             : const CircularProgressIndicator(),
+      ),
+    );
+  }
+}
+
+// Compact video player widget for inline display
+class _VideoPlayerWidget extends StatefulWidget {
+  final String videoUrl;
+
+  const _VideoPlayerWidget({required this.videoUrl});
+
+  @override
+  State<_VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
+}
+
+class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeVideo();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _initializeVideo() async {
+    try {
+      _controller = VideoPlayerController.network(widget.videoUrl);
+      await _controller!.initialize();
+      setState(() {
+        _isInitialized = true;
+      });
+    } catch (e) {
+      print('Error initializing video: $e');
+    }
+  }
+
+  void _togglePlayPause() {
+    if (_controller != null && _isInitialized) {
+      setState(() {
+        if (_isPlaying) {
+          _controller!.pause();
+          _isPlaying = false;
+        } else {
+          _controller!.play();
+          _isPlaying = true;
+        }
+      });
+    }
+  }
+
+  void _openFullScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VideoPlayerScreen(videoUrl: widget.videoUrl),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 250,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+        color: Colors.black,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          children: [
+            if (_isInitialized && _controller != null)
+              Center(
+                child: AspectRatio(
+                  aspectRatio: _controller!.value.aspectRatio,
+                  child: VideoPlayer(_controller!),
+                ),
+              )
+            else
+              Container(
+                color: Colors.grey[800],
+                child: const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              ),
+
+            // Play/Pause overlay
+            if (_isInitialized)
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: _togglePlayPause,
+                  child: Container(
+                    color: Colors.transparent,
+                    child: Center(
+                      child: AnimatedOpacity(
+                        opacity: _isPlaying ? 0.0 : 1.0,
+                        duration: const Duration(milliseconds: 300),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.7),
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow,
+                            color: Colors.white,
+                            size: 40,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Fullscreen button
+            Positioned(
+              top: 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: _openFullScreen,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.fullscreen,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+
+            // Video progress indicator
+            if (_isInitialized && _controller != null)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: VideoProgressIndicator(
+                  _controller!,
+                  allowScrubbing: true,
+                  colors: const VideoProgressColors(
+                    playedColor: Colors.red,
+                    bufferedColor: Colors.grey,
+                    backgroundColor: Colors.black26,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

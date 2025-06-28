@@ -6,6 +6,8 @@ import 'package:spoken_cafe_controller/model/Screen/Home/HomeContect.dart';
 import 'package:spoken_cafe_controller/model/Screen/Settings/Settings.dart';
 import 'package:spoken_cafe_controller/model/Screen/Students/Students.dart';
 import 'package:spoken_cafe_controller/model/Screen/Teachers/Teachers.dart';
+import 'package:spoken_cafe_controller/model/Screen/TeacherandStudent/TeacherandStudent.dart';
+import 'package:spoken_cafe_controller/model/Screen/Gallery/Gallery.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -18,8 +20,8 @@ class _HomeState extends State<Home> {
   // Check if the platform is desktop
   bool get isDesktop => Platform.isMacOS || Platform.isWindows;
 
-  // Track selected menu item
-  String _selectedMenu = 'Home';
+  // Track selected menu item - Changed default to Gallery
+  String _selectedMenu = 'Gallery';
 
   // Handle menu selection
   void _onMenuSelected(String menu) {
@@ -77,10 +79,14 @@ class _HomeState extends State<Home> {
         return Icons.people;
       case 'Teacher':
         return Icons.school;
+      case 'TeacherandStudent':
+        return Icons.dashboard;
       case 'Chat':
         return Icons.chat;
       case 'Setting':
         return Icons.settings;
+      case 'Gallery':
+        return Icons.browse_gallery;
       default:
         return Icons.circle;
     }
@@ -95,12 +101,16 @@ class _HomeState extends State<Home> {
         return const Students();
       case 'Teacher':
         return const Teachers();
+      case 'TeacherandStudent':
+        return const TeacherandStudent();
       case 'Chat':
         return const Chat();
       case 'Setting':
         return const Settings();
+      case 'Gallery':
+        return const Gallery();
       default:
-        return const HomeContent(isMobile: true);
+        return const Gallery();
     }
   }
 }

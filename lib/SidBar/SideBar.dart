@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:spoken_cafe_controller/model/Screen/Chat/Chat.dart';
 import 'package:spoken_cafe_controller/model/Screen/Gallery/Gallery.dart';
@@ -7,6 +6,7 @@ import 'package:spoken_cafe_controller/model/Screen/Home/HomeContect.dart';
 import 'package:spoken_cafe_controller/model/Screen/Settings/Settings.dart';
 import 'package:spoken_cafe_controller/model/Screen/Students/Students.dart';
 import 'package:spoken_cafe_controller/model/Screen/Teachers/Teachers.dart';
+import 'package:spoken_cafe_controller/model/Screen/TeacherandStudent/TeacherandStudent.dart';
 
 
 class Sidebar extends StatefulWidget {
@@ -17,10 +17,15 @@ class Sidebar extends StatefulWidget {
 }
 
 class _SidebarState extends State<Sidebar> {
-  String selectedMenu = 'Home'; // Default selected menu item
+  String selectedMenu = 'Gallery'; // Changed default to Gallery
 
   @override
   Widget build(BuildContext context) {
+    // If Gallery is selected, show it full screen without sidebar
+    if (selectedMenu == 'Gallery') {
+      return const Gallery();
+    }
+    
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: PreferredSize(
@@ -105,6 +110,8 @@ class _SidebarState extends State<Sidebar> {
         return Icons.people;
       case 'Teacher':
         return Icons.school;
+      case 'TeacherandStudent':
+        return Icons.group;
       case 'Chat':
         return Icons.chat;
       case 'Setting':
@@ -125,6 +132,8 @@ class _SidebarState extends State<Sidebar> {
         return const Students();
       case 'Teacher':
         return const Teachers();
+      case 'TeacherandStudent':
+        return const TeacherandStudent();
       case 'Chat':
         return const Chat();
       case 'Setting':
@@ -263,6 +272,8 @@ List<String> listhomedashboard = [
   'Home',
   'Student',
   'Teacher',
+  'TeacherandStudent',
   'Chat',
   'Setting',
+  'Gallery',
 ];
