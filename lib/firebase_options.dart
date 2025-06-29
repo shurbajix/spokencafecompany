@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -43,47 +40,56 @@ class DefaultFirebaseOptions {
     }
   }
 
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyDsFl2r-oJSBZYt0tac-uZkxQshGZXSRPc',
+    appId: '1:488372966900:web:362cc77b28c87d1cabd5a1',
+    messagingSenderId: '488372966900',
+    projectId: 'spoken-cafe-456813-b3e6d',
+    authDomain: 'spoken-cafe-456813-b3e6d.firebaseapp.com',
+    databaseURL: 'https://spoken-cafe-456813-b3e6d-default-rtdb.firebaseio.com',
+    storageBucket: 'spoken-cafe-456813-b3e6d.firebasestorage.app',
+    measurementId: 'G-QDTED2MM63',
+  );
+
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDP8_hYC-IENhvvBmmSiSUx2cQOjTAf0rg',
-    appId: '1:324717418314:android:afd7d7f338629fcf6a93b3',
-    messagingSenderId: '324717418314',
-    projectId: 'spoken-cafe-4d3f0',
-    databaseURL: 'https://spoken-cafe-4d3f0-default-rtdb.firebaseio.com',
-    storageBucket: 'spoken-cafe-4d3f0.firebasestorage.app',
+    apiKey: 'AIzaSyBXY_nKvO6CuHS-6KOj6bM1Vf4yRRsLxPg',
+    appId: '1:488372966900:android:1c9f3e71e1302a5eabd5a1',
+    messagingSenderId: '488372966900',
+    projectId: 'spoken-cafe-456813-b3e6d',
+    databaseURL: 'https://spoken-cafe-456813-b3e6d-default-rtdb.firebaseio.com',
+    storageBucket: 'spoken-cafe-456813-b3e6d.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAmToZeb3oNd_-JiSsIGXA19r7pE08KCcY',
-    appId: '1:324717418314:ios:cf02ca42104cd5906a93b3',
-    messagingSenderId: '324717418314',
-    projectId: 'spoken-cafe-4d3f0',
-    databaseURL: 'https://spoken-cafe-4d3f0-default-rtdb.firebaseio.com',
-    storageBucket: 'spoken-cafe-4d3f0.firebasestorage.app',
-    androidClientId: '324717418314-k4msfp5808urj0m6jj5q07kanle4bs4s.apps.googleusercontent.com',
-    iosClientId: '324717418314-a4lgckflhitbr7kdn12vm7o27n5uqsho.apps.googleusercontent.com',
-    iosBundleId: 'com.example.spokenCafeController',
+    apiKey: 'AIzaSyAXg3l8muLAurvwEBWfhbK-UzRl4c8kZ4s',
+    appId: '1:488372966900:ios:dd09961d295838e2abd5a1',
+    messagingSenderId: '488372966900',
+    projectId: 'spoken-cafe-456813-b3e6d',
+    databaseURL: 'https://spoken-cafe-456813-b3e6d-default-rtdb.firebaseio.com',
+    storageBucket: 'spoken-cafe-456813-b3e6d.firebasestorage.app',
+    iosClientId: '488372966900-pfqepee4pq9jh0dhguujskcla659kha6.apps.googleusercontent.com',
+    iosBundleId: 'com.example.spokencafe',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyAmToZeb3oNd_-JiSsIGXA19r7pE08KCcY',
-    appId: '1:324717418314:ios:cf02ca42104cd5906a93b3',
-    messagingSenderId: '324717418314',
-    projectId: 'spoken-cafe-4d3f0',
-    databaseURL: 'https://spoken-cafe-4d3f0-default-rtdb.firebaseio.com',
-    storageBucket: 'spoken-cafe-4d3f0.firebasestorage.app',
-    androidClientId: '324717418314-k4msfp5808urj0m6jj5q07kanle4bs4s.apps.googleusercontent.com',
-    iosClientId: '324717418314-a4lgckflhitbr7kdn12vm7o27n5uqsho.apps.googleusercontent.com',
-    iosBundleId: 'com.example.spokenCafeController',
+    apiKey: 'AIzaSyAXg3l8muLAurvwEBWfhbK-UzRl4c8kZ4s',
+    appId: '1:488372966900:ios:dd09961d295838e2abd5a1',
+    messagingSenderId: '488372966900',
+    projectId: 'spoken-cafe-456813-b3e6d',
+    databaseURL: 'https://spoken-cafe-456813-b3e6d-default-rtdb.firebaseio.com',
+    storageBucket: 'spoken-cafe-456813-b3e6d.firebasestorage.app',
+    iosClientId: '488372966900-pfqepee4pq9jh0dhguujskcla659kha6.apps.googleusercontent.com',
+    iosBundleId: 'com.example.spokencafe',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyAN7eb7ubIVBUeWwXtusDVnZj7gmxTyDWs',
-    appId: '1:324717418314:web:4080574e358c25146a93b3',
-    messagingSenderId: '324717418314',
-    projectId: 'spoken-cafe-4d3f0',
-    authDomain: 'spoken-cafe-4d3f0.firebaseapp.com',
-    databaseURL: 'https://spoken-cafe-4d3f0-default-rtdb.firebaseio.com',
-    storageBucket: 'spoken-cafe-4d3f0.firebasestorage.app',
-    measurementId: 'G-77Z4VP7TWW',
+    apiKey: 'AIzaSyDsFl2r-oJSBZYt0tac-uZkxQshGZXSRPc',
+    appId: '1:488372966900:web:3e1ab694e8415a57abd5a1',
+    messagingSenderId: '488372966900',
+    projectId: 'spoken-cafe-456813-b3e6d',
+    authDomain: 'spoken-cafe-456813-b3e6d.firebaseapp.com',
+    databaseURL: 'https://spoken-cafe-456813-b3e6d-default-rtdb.firebaseio.com',
+    storageBucket: 'spoken-cafe-456813-b3e6d.firebasestorage.app',
+    measurementId: 'G-YC8T6P088P',
   );
 }

@@ -8,6 +8,42 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:488372966900:android:6eeb04ef610b82f4abd5a1",
+        "android_client_info": {
+          "package_name": "com.example.spokenCafe"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "488372966900-ti17juadliha1111ppbbr1ngnin3unik.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXY_nKvO6CuHS-6KOj6bM1Vf4yRRsLxPg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "488372966900-6o2e060rh8ei9gb7i8iar5dj1qler2rt.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "488372966900-1pb23vn2ipj5vl48qg19o80kfe2iep3i.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.spokenCafe"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:488372966900:android:e0a180882b4d6535abd5a1",
         "android_client_info": {
           "package_name": "com.example.spoken_cafe_controller"
@@ -32,10 +68,10 @@
               "client_type": 3
             },
             {
-              "client_id": "488372966900-jjpvq174ltv16mu0e5lnpb3f3pu6k3dl.apps.googleusercontent.com",
+              "client_id": "488372966900-1pb23vn2ipj5vl48qg19o80kfe2iep3i.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "your.bundle.id"
+                "bundle_id": "com.example.spokenCafe"
               }
             }
           ]
@@ -50,6 +86,22 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "488372966900-l8ug11b664h1bd37frgh0p4tb7p0bjgm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.spokencafe",
+            "certificate_hash": "db45a6a3435c0171137747f7e87ebcf74f65ab86"
+          }
+        },
+        {
+          "client_id": "488372966900-n1dv99mvq7f0qdfl5th9tpd2ia9n2tei.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.spokencafe",
+            "certificate_hash": "8f690434f7e90de773ca9014f4d9f8190b154949"
+          }
+        },
         {
           "client_id": "488372966900-ti17juadliha1111ppbbr1ngnin3unik.apps.googleusercontent.com",
           "client_type": 3
@@ -68,10 +120,10 @@
               "client_type": 3
             },
             {
-              "client_id": "488372966900-jjpvq174ltv16mu0e5lnpb3f3pu6k3dl.apps.googleusercontent.com",
+              "client_id": "488372966900-1pb23vn2ipj5vl48qg19o80kfe2iep3i.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "your.bundle.id"
+                "bundle_id": "com.example.spokenCafe"
               }
             }
           ]
@@ -104,10 +156,10 @@
               "client_type": 3
             },
             {
-              "client_id": "488372966900-jjpvq174ltv16mu0e5lnpb3f3pu6k3dl.apps.googleusercontent.com",
+              "client_id": "488372966900-1pb23vn2ipj5vl48qg19o80kfe2iep3i.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "your.bundle.id"
+                "bundle_id": "com.example.spokenCafe"
               }
             }
           ]

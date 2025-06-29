@@ -41,6 +41,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 import 'package:gallery_saver/gallery_saver.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class Teacher {
   final String name;
@@ -121,12 +124,19 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   bool _hasFetched = false;
   String? _selectedTeacherDocId;
   String _searchQuery = '';
+  String _postsSearchQuery = '';
   late TabController _tabController;
+  final TextEditingController _postsSearchController = TextEditingController();
 
   // Cache for teacher media to avoid refetching
   static final Map<String, Map<String, List<String>>> _mediaCache = {};
   static final Map<String, DateTime> _mediaCacheTime = {};
   static const Duration _cacheExpiry = Duration(minutes: 10);
+
+  // User name caching for lessons
+  static final Map<String, String> _userNamesCache = {};
+  static final Map<String, DateTime> _userNamesCacheTime = {};
+  static const Duration _userNameCacheExpiry = Duration(minutes: 10);
 
 
   @override
@@ -138,13 +148,367 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
         setState(() {});
       }
     });
+    
+    // Initialize posts search listener
+    _postsSearchController.addListener(() {
+      setState(() {
+        _postsSearchQuery = _postsSearchController.text.toLowerCase();
+      });
+    });
+    
     _initializeFirebase();
-
   }
 
   void _initializeFirebase() {
     _usersCollection = FirebaseFirestore.instance.collection('users');
     _fetchTeachers();
+  }
+
+  void _clearExpiredCache() {
+    final now = DateTime.now();
+    _userNamesCacheTime.removeWhere((key, time) {
+      if (now.difference(time) > _userNameCacheExpiry) {
+        _userNamesCache.remove(key);
+        return true;
+      }
+      return false;
+    });
+  }
+
+  Future<String> _getCachedUserName(String userId) async {
+    final now = DateTime.now();
+    
+    if (_userNamesCache.containsKey(userId) && 
+        _userNamesCacheTime.containsKey(userId) &&
+        now.difference(_userNamesCacheTime[userId]!) < _userNameCacheExpiry) {
+      return _userNamesCache[userId]!;
+    }
+    
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get(const GetOptions(source: Source.serverAndCache))
+          .timeout(const Duration(seconds: 5));
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        final name = '${data['name'] ?? ''} ${data['surname'] ?? ''}'.trim();
+        final displayName = name.isEmpty ? (data['email'] ?? 'Unknown User') : name;
+        
+        _userNamesCache[userId] = displayName;
+        _userNamesCacheTime[userId] = now;
+        
+        return displayName;
+      }
+    } catch (e) {
+      print('Error fetching user name for $userId: $e');
+    }
+    
+    return 'Unknown User';
+  }
+
+  String _formatDateTime(dynamic dateTime) {
+    try {
+      DateTime dt;
+      if (dateTime is Timestamp) {
+        dt = dateTime.toDate();
+      } else if (dateTime is String) {
+        dt = DateTime.parse(dateTime);
+      } else {
+        return 'Invalid Date';
+      }
+      
+      final now = DateTime.now();
+      final difference = dt.difference(now);
+      
+      if (difference.isNegative) {
+        if (difference.inDays < -1) {
+          return '${dt.day}/${dt.month}/${dt.year}';
+        } else {
+          return 'Started ${difference.inHours.abs()}h ago';
+        }
+      } else {
+        if (difference.inDays > 0) {
+          return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        } else if (difference.inHours > 0) {
+          return 'Starts in ${difference.inHours}h ${difference.inMinutes.remainder(60)}m';
+        } else {
+          return 'Starts in ${difference.inMinutes}m';
+        }
+      }
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  }
+
+  String _getLessonStatus(dynamic dateTime) {
+    try {
+      DateTime dt;
+      if (dateTime is Timestamp) {
+        dt = dateTime.toDate();
+      } else if (dateTime is String) {
+        dt = DateTime.parse(dateTime);
+      } else {
+        return 'Unknown';
+      }
+      
+      final now = DateTime.now();
+      final lessonEnd = dt.add(const Duration(hours: 2));
+      
+      if (now.isBefore(dt)) {
+        return 'Upcoming';
+      } else if (now.isAfter(dt) && now.isBefore(lessonEnd)) {
+        return 'Active';
+      } else {
+        return 'Completed';
+      }
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  Color _getLessonStatusColor(String status) {
+    switch (status) {
+      case 'Active':
+        return Colors.green;
+      case 'Upcoming':
+        return Colors.blue;
+      case 'Completed':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildLessonsSection() {
+    return Container(
+      margin: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'All Lessons',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const Divider(),
+          Container(
+            height: 400,
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('lessons')
+                  .orderBy('dateTime', descending: true)
+                  .limit(50)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 10),
+                        Text('Loading lessons...'),
+                      ],
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error, color: Colors.red, size: 50),
+                        const SizedBox(height: 10),
+                        Text('Error loading lessons: ${snapshot.error}'),
+                        const SizedBox(height: 10),
+                        ElevatedButton(
+                          onPressed: () => setState(() {}),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.school_outlined, size: 50, color: Colors.grey),
+                        SizedBox(height: 10),
+                        Text(
+                          'No lessons found',
+                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final lessons = snapshot.data!.docs;
+
+                return ListView.builder(
+                  itemCount: lessons.length,
+                  itemBuilder: (context, index) {
+                    final lesson = lessons[index];
+                    final data = lesson.data() as Map<String, dynamic>;
+
+                    final teacherId = data['teacherId']?.toString() ?? '';
+                    final speakLevel = data['speakLevel']?.toString() ?? 'Unknown';
+                    final description = data['description']?.toString() ?? 'No description';
+                    final locationName = data['locationName']?.toString() ?? 'Unknown location';
+                    final maxStudents = data['maxStudents'] ?? 8;
+                    final currentStudentCount = data['currentStudentCount'] ?? 0;
+                    final dateTime = data['dateTime'];
+                    
+                    final status = _getLessonStatus(dateTime);
+                    final formattedDateTime = _formatDateTime(dateTime);
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                                                 Container(
+                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                   decoration: BoxDecoration(
+                                     color: _getLessonStatusColor(status),
+                                     borderRadius: BorderRadius.circular(12),
+                                   ),
+                                  child: Text(
+                                    status,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    speakLevel,
+                                    style: const TextStyle(
+                                      color: Colors.blue,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            
+                            FutureBuilder<String>(
+                              future: _getCachedUserName(teacherId),
+                              builder: (context, teacherSnapshot) {
+                                return Row(
+                                  children: [
+                                    const Icon(Icons.person, size: 16, color: Colors.grey),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        teacherSnapshot.data ?? 'Loading teacher...',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 4),
+                            
+                            Row(
+                              children: [
+                                const Icon(Icons.schedule, size: 16, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    formattedDateTime,
+                                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            
+                            Row(
+                              children: [
+                                const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    locationName,
+                                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            
+                            Row(
+                              children: [
+                                const Icon(Icons.group, size: 16, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$currentStudentCount/$maxStudents students',
+                                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                            
+                            if (description.isNotEmpty && description != 'No description') ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                description,
+                                style: const TextStyle(fontSize: 13),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
 
@@ -183,15 +547,20 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       teachers = parsedTeachers;
       print('✅ Fetched ${teachers.length} teachers in optimized mode');
 
+      print('✅ Teachers loaded successfully - fetching images and videos from Firebase');
+      
+      // Also try to clear all caches and reset Firebase connection
+      _resetFirebaseConnection();
+
       if (mounted) {
         setState(() => isLoading = false);
-        // Preload media for better UX
+        // Preload media for better UX  
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) _preloadMediaForVisibleTeachers();
+          if (mounted) _preloadMediaForVisibleTeachers(); 
         });
-      }
-    } on FirebaseException catch (e) {
-      print('Firebase error: ${e.code} - ${e.message}');
+      } 
+    } on FirebaseException catch (e) { 
+      print('Firebase error: ${e.code} - ${e.message}'); 
       if (mounted) {
         setState(() {
           errorMessage = _handleFirebaseError(e);
@@ -312,6 +681,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   void dispose() {
     _scrollController.dispose();
     _tabController.dispose();
+    _postsSearchController.dispose();
     // Clear cache on dispose to free memory
     _clearCache();
     super.dispose();
@@ -540,7 +910,29 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       context: context,
       builder: (_) => Dialog(
         child: InteractiveViewer(
-          child: Image.network(imageUrl, fit: BoxFit.contain),
+          child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        fit: BoxFit.contain,
+        placeholder: (context, url) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        errorWidget: (context, url, error) {
+          print('🖼️ Full screen image error: $error');
+          return Container(
+            color: Colors.grey[300],
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.image, color: Colors.grey, size: 100),
+                  SizedBox(height: 16),
+                  Text('Image Preview', style: TextStyle(color: Colors.grey, fontSize: 18)),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
         ),
       ),
     );
@@ -564,124 +956,130 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                 ? _buildGalleryPage()
                 : _buildOriginalDrawerContent(),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              decoration: InputDecoration(
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xff1B1212)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xff1B1212)),
-                ),
-                hintText: 'Search by name, email or phone',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Colors.grey),
-                ),
-              ),
-              onChanged: (val) => setState(() => _searchQuery = val),
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey,
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: TextField(
+                decoration: InputDecoration(
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Color(0xff1B1212)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Color(0xff1B1212)),
+                  ),
+                  hintText: 'Search by name, email or phone',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Column(
-                    children: [
-                      Text('Underlines', style: TextStyle(fontSize: 20)),
-                    ],
+                    borderSide: const BorderSide(color: Colors.grey),
                   ),
                 ),
+                onChanged: (val) => setState(() => _searchQuery = val),
               ),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Column(
-                    children: [
-                      Text('Underlines', style: TextStyle(fontSize: 20)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Container(
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  spreadRadius: 2,
-                ),
-              ],
             ),
-            height: 600,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            Row(
               children: [
-                const Padding(
-                  padding: EdgeInsets.all(10),
-                  child: Text(
-                    "Teachers List",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Column(
+                      children: [
+                        Text('Underlines', style: TextStyle(fontSize: 20)),
+                      ],
+                    ),
                   ),
-                ),
-                const Divider(),
-                TabBar(
-                  controller: _tabController,
-                  onTap: (index) {
-                    if (index >= 0 && index < 3) {
-                      setState(() {});
-                    }
-                  },
-                  labelColor: Colors.black,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: Colors.blue,
-                  tabs: const [
-                    Tab(
-                      icon: Icon(Icons.person_add,color: Colors.black,),
-                      text: 'New Teachers',
-                    ),
-                    Tab(
-                      icon: Icon(Icons.check_circle,color: Colors.green,),
-                      text: 'Active Teachers',
-                    ),
-                    Tab(
-                      icon: Icon(Icons.cancel,color: Colors.red,),
-                      text: 'Rejected Teachers',
-                    ),
-                  ],
                 ),
                 Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildTeachersList(),
-                      _buildTeachersList(),
-                      _buildTeachersList(),
-                    ],
+                  child: Container(
+                    margin: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Column(
+                      children: [
+                        Text('Underlines', style: TextStyle(fontSize: 20)),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            Container(
+              margin: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              height: 600,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Text(
+                      "Teachers List",
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const Divider(),
+                  TabBar(
+                    controller: _tabController,
+                    onTap: (index) {
+                      if (index >= 0 && index < 3) {
+                        setState(() {});
+                      }
+                    },
+                    labelColor: Colors.black,
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: Colors.blue,
+                    tabs: const [
+                      Tab(
+                        icon: Icon(Icons.person_add,color: Colors.black,),
+                        text: 'New Teachers',
+                      ),
+                      Tab(
+                        icon: Icon(Icons.check_circle,color: Colors.green,),
+                        text: 'Active Teachers',
+                      ),
+                      Tab(
+                        icon: Icon(Icons.cancel,color: Colors.red,),
+                        text: 'Rejected Teachers',
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildTeachersList(),
+                        _buildTeachersList(),
+                        _buildTeachersList(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Add Lessons Section
+            _buildLessonsSection(),
+            // Add bottom padding to ensure content is not cut off
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
@@ -977,16 +1375,9 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                             title: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                CircleAvatar(
+                                _buildSafeProfileImage(
+                                  imageUrl: t.profileImageUrl,
                                   radius: 20,
-                                  backgroundColor: Colors.amber,
-                                  backgroundImage: t.profileImageUrl != null
-                                      ? NetworkImage(t.profileImageUrl!)
-                                      : null,
-                                  child: t.profileImageUrl == null
-                                      ? const Icon(Icons.person,
-                                          size: 20, color: Colors.white)
-                                      : null,
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
@@ -1109,15 +1500,9 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                         ],
                       ),
                       const SizedBox(height: 20),
-                      CircleAvatar(
+                      _buildSafeProfileImage(
+                        imageUrl: teacher.profileImageUrl,
                         radius: 60,
-                        backgroundColor: Colors.grey[300],
-                        backgroundImage: teacher.profileImageUrl != null
-                            ? NetworkImage(teacher.profileImageUrl!)
-                            : null,
-                        child: teacher.profileImageUrl == null
-                            ? const Icon(Icons.person, size: 60, color: Colors.white)
-                            : null,
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -1457,6 +1842,36 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
             Scaffold.of(context).openEndDrawer();
           },
         ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _postsSearchController,
+              decoration: InputDecoration(
+                hintText: 'Search posts by content...',
+                prefixIcon: const Icon(Icons.search, color: Color(0xff1B1212)),
+                suffixIcon: _postsSearchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Color(0xff1B1212)),
+                        onPressed: () {
+                          _postsSearchController.clear();
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: const BorderSide(color: Color(0xff1B1212)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: const BorderSide(color: Color(0xff1B1212), width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+            ),
+          ),
+        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -1471,7 +1886,40 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(child: Text('No posts found.'));
           }
-          final posts = snapshot.data!.docs;
+          final allPosts = snapshot.data!.docs;
+          
+          // Filter posts based on search query
+          final filteredPosts = _postsSearchQuery.isEmpty
+              ? allPosts
+              : allPosts.where((post) {
+                  final postData = post.data() as Map<String, dynamic>;
+                  final text = postData['text']?.toString().toLowerCase() ?? '';
+                  final description = postData['description']?.toString().toLowerCase() ?? '';
+                  return text.contains(_postsSearchQuery) || 
+                         description.contains(_postsSearchQuery);
+                }).toList();
+
+          if (filteredPosts.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _postsSearchQuery.isEmpty ? Icons.post_add : Icons.search_off,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _postsSearchQuery.isEmpty 
+                        ? 'No posts found.' 
+                        : 'No posts match your search.',
+                    style: const TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                ],
+              ),
+            );
+          }
 
           return GridView.builder(
             padding: const EdgeInsets.all(8),
@@ -1481,15 +1929,317 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
               mainAxisSpacing: 18,
               childAspectRatio: 0.7,
             ),
-            itemCount: posts.length,
+            itemCount: filteredPosts.length,
             itemBuilder: (context, index) {
-              final postDoc = posts[index];
+              final postDoc = filteredPosts[index];
               final postData = postDoc.data() as Map<String, dynamic>;
               return _buildPostGridItem(postDoc.id, postData);
             },
           );
         },
       ),
+    );
+  }
+
+  // Show dialog for deleting post from user's account
+  void _showDeleteFromUserDialog(Map<String, dynamic> post) {
+    final userName = post['userName']?.toString() ?? 'Unknown User';
+    final userId = post['userId']?.toString() ?? '';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Delete from User Account',
+          style: TextStyle(color: Colors.orange),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to delete this post from $userName\'s account?'),
+            const SizedBox(height: 16),
+            const Text(
+              'This will permanently remove the post from the user\'s profile.',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deletePostFromUser(post);
+              
+              // Show dialog asking if want to chat with user
+              _showChatOfferDialog(userName, userId);
+            },
+            child: const Text('Delete from User'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show dialog for deleting post from control app only
+  void _showDeleteFromControlDialog(Map<String, dynamic> post) {
+    final userName = post['userName']?.toString() ?? 'Unknown User';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Delete from Control App',
+          style: TextStyle(color: Colors.red),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to remove this post from the control app?'),
+            const SizedBox(height: 16),
+            Text(
+              'This will only hide the post from the control app. The post will remain on $userName\'s profile.',
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deletePostFromControl(post);
+            },
+            child: const Text('Remove from Control'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show dialog asking if want to chat with user after deleting their post
+  void _showChatOfferDialog(String userName, String userId) {
+    if (userId.isEmpty) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Offer Help'),
+        content: Text(
+          'Post deleted from $userName\'s account.\n\nWould you like to chat with $userName to offer help or support?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No, Thanks'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xff1B1212),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToChat(userId, userName);
+            },
+            child: const Text('Chat with User'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Navigate to chat screen with specific user
+  void _navigateToChat(String userId, String userName) {
+    // Since Chat doesn't take parameters, show a snackbar with user info
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Navigate to Chat and search for: $userName'),
+        backgroundColor: const Color(0xff1B1212),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // Delete post from user's account (actual deletion)
+  Future<void> _deletePostFromUser(Map<String, dynamic> post) async {
+    try {
+      final postId = post['id']?.toString();
+      final collection = post['collection']?.toString();
+      final userId = post['userId']?.toString();
+      
+      if (postId == null || collection == null) {
+        _showSnackBar('Error: Invalid post data', Colors.red);
+        return;
+      }
+
+      // Show loading
+      _showSnackBar('Deleting post from user account...', Colors.orange);
+
+      // Delete from the original collection
+      await FirebaseFirestore.instance.collection(collection).doc(postId).delete();
+
+      // If it's a post with media, also delete from media collections
+      if (collection == 'posts') {
+        final mediaFiles = post['mediaFiles'] as List<dynamic>? ?? [];
+        
+        for (var mediaUrl in mediaFiles) {
+          final url = mediaUrl.toString();
+          if (_isVideoUrl(url)) {
+            // Find and delete from post_media_videos
+            final videoQuery = await FirebaseFirestore.instance
+                .collection('post_media_videos')
+                .where('url', isEqualTo: url)
+                .where('userId', isEqualTo: userId)
+                .get();
+            
+            for (var doc in videoQuery.docs) {
+              await doc.reference.delete();
+            }
+          } else {
+            // Find and delete from post_media_images
+            final imageQuery = await FirebaseFirestore.instance
+                .collection('post_media_images')
+                .where('url', isEqualTo: url)
+                .where('userId', isEqualTo: userId)
+                .get();
+            
+            for (var doc in imageQuery.docs) {
+              await doc.reference.delete();
+            }
+          }
+        }
+      }
+
+      _showSnackBar('Post deleted from user account successfully', Colors.green);
+      
+    } catch (e) {
+      print('Error deleting post from user: $e');
+      _showSnackBar('Error deleting post: $e', Colors.red);
+    }
+  }
+
+  // Delete post from control app only (add to hidden list)
+  Future<void> _deletePostFromControl(Map<String, dynamic> post) async {
+    try {
+      final postId = post['id']?.toString();
+      final collection = post['collection']?.toString();
+      
+      if (postId == null || collection == null) {
+        _showSnackBar('Error: Invalid post data', Colors.red);
+        return;
+      }
+
+      // Show loading
+      _showSnackBar('Removing post from control app...', Colors.orange);
+
+      // Add to hidden posts collection for control app
+      await FirebaseFirestore.instance.collection('control_hidden_posts').doc('${collection}_$postId').set({
+        'postId': postId,
+        'collection': collection,
+        'hiddenAt': FieldValue.serverTimestamp(),
+        'hiddenBy': 'control_app', // You can add actual admin user ID here
+      });
+
+      _showSnackBar('Post removed from control app', Colors.green);
+      
+    } catch (e) {
+      print('Error removing post from control: $e');
+      _showSnackBar('Error removing post: $e', Colors.red);
+    }
+  }
+
+
+
+  // Show snackbar message
+  void _showSnackBar(String message, Color color) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // Reset Firebase connection and clear all caches
+  Future<void> _resetFirebaseConnection() async {
+    try {
+      print('🔄 Resetting Firebase connection...');
+      
+      // Clear image cache
+      await DefaultCacheManager().emptyCache();
+      print('✅ Image cache cleared');
+      
+      // Clear Firebase internal caches if possible
+      await FirebaseFirestore.instance.clearPersistence();
+      print('✅ Firestore cache cleared');
+      
+      // Force Firebase to re-initialize
+      print('🔄 Firebase connection reset complete');
+      
+    } catch (e) {
+      print('⚠️ Error resetting Firebase connection: $e');
+      // Continue anyway, as some errors are expected
+    }
+  }
+
+
+
+  // Safe profile image with Firebase Storage fetching
+  Widget _buildSafeProfileImage({
+    required String? imageUrl,
+    required double radius,
+    IconData fallbackIcon = Icons.person,
+  }) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: Colors.grey[300],
+      child: imageUrl != null && imageUrl.isNotEmpty
+          ? ClipOval(
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                width: radius * 2,
+                height: radius * 2,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => CircularProgressIndicator(
+                  strokeWidth: radius < 30 ? 2 : 3,
+                  color: Colors.white,
+                ),
+                errorWidget: (context, url, error) {
+                  print('🖼️ Profile image error: $error');
+                  return Icon(fallbackIcon, size: radius, color: Colors.white);
+                },
+                httpHeaders: {
+                  'User-Agent': 'SpokenCafeController/1.0',
+                },
+              ),
+            )
+          : Icon(fallbackIcon, size: radius, color: Colors.white),
     );
   }
 
@@ -1522,13 +2272,75 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (postData['text'] != null && postData['text'].isNotEmpty)
-            Text(
-              postData['text'],
-              style: const TextStyle(fontSize: 16, color: Colors.black87),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
+          // Header with delete buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (postData['text'] != null && postData['text'].isNotEmpty)
+                      Text(
+                        postData['text'],
+                        style: const TextStyle(fontSize: 16, color: Colors.black87),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              // Delete buttons menu
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: Colors.black87),
+                onSelected: (value) {
+                  final post = {
+                    'id': postId,
+                    'collection': 'posts', // Assuming posts collection
+                    'text': postData['text'],
+                    'userId': postData['userId'],
+                    'userName': postData['userName'] ?? 'Unknown User',
+                    'mediaFiles': postData['mediaFiles'],
+                    'createdAt': postData['createdAt'],
+                  };
+                  
+                  if (value == 'delete_user') {
+                    _showDeleteFromUserDialog(post);
+                  } else if (value == 'delete_control') {
+                    _showDeleteFromControlDialog(post);
+                  }
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  const PopupMenuItem<String>(
+                    value: 'delete_user',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_remove, color: Colors.orange),
+                        SizedBox(width: 8),
+                        Text(
+                          'Delete from User',
+                          style: TextStyle(color: Colors.orange),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'delete_control',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_forever, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text(
+                          'Delete from Control',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
           if (postData['description'] != null && postData['description'].isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6.0, bottom: 6.0),
@@ -1544,14 +2356,20 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  firstMediaUrl,
+                child: CachedNetworkImage(
+                  imageUrl: firstMediaUrl,
                   fit: BoxFit.cover,
-                  width: double.infinity,
-                  errorBuilder: (context, error, stackTrace) {
+                  placeholder: (context, url) => Container(
+                    color: Colors.grey[300],
+                    child: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                  errorWidget: (context, url, error) {
+                    print('🖼️ Post image error: $error');
                     return Container(
                       color: Colors.grey[300],
-                      child: const Icon(Icons.broken_image, size: 50),
+                      child: const Icon(Icons.image, color: Colors.grey, size: 50),
                     );
                   },
                 ),
@@ -1776,22 +2594,22 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  imageUrl,
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
                   fit: BoxFit.cover,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return const Center(child: CircularProgressIndicator());
-                  },
-                  errorBuilder: (context, error, stackTrace) {
+                  placeholder: (context, url) => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                  errorWidget: (context, url, error) {
+                    print('🖼️ Document image error: $error');
                     return Container(
                       color: Colors.grey[200],
                       child: const Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.error, color: Colors.red, size: 40),
-                            Text('Failed to load image'),
+                            Icon(Icons.description, color: Colors.grey, size: 40),
+                            Text('Document Preview'),
                           ],
                         ),
                       ),
@@ -2218,16 +3036,22 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                         topLeft: Radius.circular(12),
                         topRight: Radius.circular(12),
                       ),
-                      child: Image.network(
-                        imageUrl,
+                      child: CachedNetworkImage(
+                        imageUrl: imageUrl,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return const Center(child: CircularProgressIndicator());
+                        placeholder: (context, url) => const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                        errorWidget: (context, url, error) {
+                          print('🖼️ Gallery image error: $error');
+                          return Container(
+                            color: Colors.grey[300],
+                            child: const Center(
+                              child: Icon(Icons.image, color: Colors.grey, size: 50),
+                            ),
+                          );
                         },
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Center(child: Icon(Icons.broken_image)),
                       ),
                     ),
                     // Image indicator
@@ -2453,79 +3277,6 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   }
 }
 
-class VideoPlayerScreen extends StatefulWidget {
-  final String videoUrl;
-  const VideoPlayerScreen({Key? key, required this.videoUrl}) : super(key: key);
-
-  @override
-  _VideoPlayerScreenState createState() => _VideoPlayerScreenState();
-}
-
-class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  late VideoPlayerController _controller;
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.network(widget.videoUrl)
-      ..initialize().then((_) {
-        setState(() {
-          _initialized = true;
-        });
-        _controller.play();
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller.pause();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Video Player'),
-      ),
-      body: Center(
-        child: _initialized
-            ? AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    VideoPlayer(_controller),
-                    VideoProgressIndicator(_controller, allowScrubbing: true),
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          if (_controller.value.isPlaying) {
-                            _controller.pause();
-                          } else {
-                            _controller.play();
-                          }
-                        });
-                      },
-                      child: Container(
-                        color: Colors.transparent,
-                        alignment: Alignment.center,
-                        child: !_controller.value.isPlaying
-                            ? const Icon(Icons.play_arrow, size: 80, color: Colors.white)
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            : const CircularProgressIndicator(),
-      ),
-    );
-  }
-}
-
 // Compact video player widget for inline display
 class _VideoPlayerWidget extends StatefulWidget {
   final String videoUrl;
@@ -2555,13 +3306,15 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
 
   void _initializeVideo() async {
     try {
-      _controller = VideoPlayerController.network(widget.videoUrl);
+      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
       await _controller!.initialize();
-      setState(() {
-        _isInitialized = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
     } catch (e) {
-      print('Error initializing video: $e');
+      print('🎬 Video initialization error: $e');
     }
   }
 
@@ -2684,6 +3437,83 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class VideoPlayerScreen extends StatefulWidget {
+  final String videoUrl;
+  const VideoPlayerScreen({Key? key, required this.videoUrl}) : super(key: key);
+
+  @override
+  _VideoPlayerScreenState createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  late VideoPlayerController _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() {
+            _initialized = true;
+          });
+          _controller.play();
+        }
+      }).catchError((error) {
+        print('🎬 Video player error: $error');
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.pause();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Video Player'),
+      ),
+      body: Center(
+        child: _initialized
+            ? AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    VideoPlayer(_controller),
+                    VideoProgressIndicator(_controller, allowScrubbing: true),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          if (_controller.value.isPlaying) {
+                            _controller.pause();
+                          } else {
+                            _controller.play();
+                          }
+                        });
+                      },
+                      child: Container(
+                        color: Colors.transparent,
+                        alignment: Alignment.center,
+                        child: !_controller.value.isPlaying
+                            ? const Icon(Icons.play_arrow, size: 80, color: Colors.white)
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : const CircularProgressIndicator(),
       ),
     );
   }

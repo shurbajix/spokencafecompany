@@ -42,6 +42,7 @@ import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+import '../Chat/Chat.dart';
 
 class Gallery extends StatefulWidget {
   const Gallery({super.key});
@@ -54,12 +55,17 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final Dio _dio = Dio();
   late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
   
   List<Map<String, dynamic>> _allPosts = [];
   List<Map<String, dynamic>> _imagePosts = [];
   List<Map<String, dynamic>> _videoPosts = [];
+  List<Map<String, dynamic>> _filteredAllPosts = [];
+  List<Map<String, dynamic>> _filteredImagePosts = [];
+  List<Map<String, dynamic>> _filteredVideoPosts = [];
   bool _isLoading = true;
   Map<String, bool> _downloadingStatus = {};
+  String _searchQuery = '';
 
   // Enhanced caching system for better performance
   static final Map<String, String> _userNamesCache = {};
@@ -84,6 +90,14 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    
+    // Initialize search listener
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.toLowerCase();
+        _filterPosts();
+      });
+    });
     
     // Initialize with optimizations
     _initializeGallery();
@@ -189,11 +203,39 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     
     // Clear cache on dispose to free memory
     _clearExpiredCache();
     
     super.dispose();
+  }
+
+  // Filter posts based on search query
+  void _filterPosts() {
+    if (_searchQuery.isEmpty) {
+      _filteredAllPosts = _allPosts;
+      _filteredImagePosts = _imagePosts;
+      _filteredVideoPosts = _videoPosts;
+    } else {
+      _filteredAllPosts = _allPosts.where((post) {
+        final userName = post['userName']?.toString().toLowerCase() ?? '';
+        final text = post['text']?.toString().toLowerCase() ?? '';
+        return userName.contains(_searchQuery) || text.contains(_searchQuery);
+      }).toList();
+      
+      _filteredImagePosts = _imagePosts.where((post) {
+        final userName = post['userName']?.toString().toLowerCase() ?? '';
+        final text = post['text']?.toString().toLowerCase() ?? '';
+        return userName.contains(_searchQuery) || text.contains(_searchQuery);
+      }).toList();
+      
+      _filteredVideoPosts = _videoPosts.where((post) {
+        final userName = post['userName']?.toString().toLowerCase() ?? '';
+        final text = post['text']?.toString().toLowerCase() ?? '';
+        return userName.contains(_searchQuery) || text.contains(_searchQuery);
+      }).toList();
+    }
   }
 
   // Request necessary permissions
@@ -333,6 +375,22 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
         });
       }
 
+      // Fetch hidden posts list first
+      final hiddenPostsSnapshot = await _firestore
+          .collection('control_hidden_posts')
+          .get(const GetOptions(source: Source.serverAndCache))
+          .timeout(const Duration(seconds: 5));
+      
+      final hiddenPostIds = <String>{};
+      for (var doc in hiddenPostsSnapshot.docs) {
+        final data = doc.data();
+        final postId = data['postId']?.toString();
+        final collection = data['collection']?.toString();
+        if (postId != null && collection != null) {
+          hiddenPostIds.add('${collection}_$postId');
+        }
+      }
+
       // Parallel fetch from all collections with optimizations
       final futures = await Future.wait([
         // Posts collection with limit and cache
@@ -372,10 +430,16 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
       // Process posts collection
       final List<Map<String, dynamic>> allPosts = [];
       
-      // Process posts with media
+      // Process posts with media (filter out hidden posts)
       for (var doc in postsSnapshot.docs) {
         final data = doc.data();
         final mediaFiles = data['mediaFiles'] as List<dynamic>?;
+        
+        // Check if this post is hidden
+        final hiddenKey = 'posts_${doc.id}';
+        if (hiddenPostIds.contains(hiddenKey)) {
+          continue; // Skip hidden posts
+        }
         
         if (mediaFiles != null && mediaFiles.isNotEmpty) {
           final userId = data['userId']?.toString();
@@ -395,10 +459,16 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
         }
       }
 
-      // Process images collection
+      // Process images collection (filter out hidden posts)
       for (var doc in imagesSnapshot.docs) {
         final data = doc.data();
         final url = data['url']?.toString();
+        
+        // Check if this post is hidden
+        final hiddenKey = 'post_media_images_${doc.id}';
+        if (hiddenPostIds.contains(hiddenKey)) {
+          continue; // Skip hidden posts
+        }
         
         if (url != null && url.isNotEmpty) {
           final userId = data['userId']?.toString();
@@ -418,10 +488,16 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
         }
       }
 
-      // Process videos collection
+      // Process videos collection (filter out hidden posts)
       for (var doc in videosSnapshot.docs) {
         final data = doc.data();
         final url = data['url']?.toString();
+        
+        // Check if this post is hidden
+        final hiddenKey = 'post_media_videos_${doc.id}';
+        if (hiddenPostIds.contains(hiddenKey)) {
+          continue; // Skip hidden posts
+        }
         
         if (url != null && url.isNotEmpty) {
           final userId = data['userId']?.toString();
@@ -531,6 +607,9 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
         _imagePosts = imagePosts;
         _videoPosts = videoPosts;
         _isLoading = false;
+        
+        // Initialize filtered lists
+        _filterPosts();
       });
     }
 
@@ -809,6 +888,271 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
     );
   }
 
+  // Show dialog for deleting post from user's account
+  void _showDeleteFromUserDialog(Map<String, dynamic> post) {
+    final userName = post['userName']?.toString() ?? 'Unknown User';
+    final userId = post['userId']?.toString() ?? '';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Delete from User Account',
+          style: TextStyle(color: Colors.orange),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to delete this post from $userName\'s account?'),
+            const SizedBox(height: 16),
+            const Text(
+              'This will permanently remove the post from the user\'s profile.',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deletePostFromUser(post);
+              
+              // Show dialog asking if want to chat with user
+              _showChatOfferDialog(userName, userId);
+            },
+            child: const Text('Delete from User'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show dialog for deleting post from control app only
+  void _showDeleteFromControlDialog(Map<String, dynamic> post) {
+    final userName = post['userName']?.toString() ?? 'Unknown User';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Delete from Control App',
+          style: TextStyle(color: Colors.red),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to remove this post from the control app?'),
+            const SizedBox(height: 16),
+             Text(
+              'This will only hide the post from the control app. The post will remain on $userName\'s profile.',
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deletePostFromControl(post);
+            },
+            child: const Text('Remove from Control'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show dialog asking if want to chat with user after deleting their post
+  void _showChatOfferDialog(String userName, String userId) {
+    if (userId.isEmpty) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Offer Help'),
+        content: Text(
+          'Post deleted from $userName\'s account.\n\nWould you like to chat with $userName to offer help or support?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No, Thanks'),
+          ),
+          ElevatedButton(
+                         style: ElevatedButton.styleFrom(
+               backgroundColor: const Color(0xff1B1212),
+               foregroundColor: Colors.white,
+             ),
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToChat(userId, userName);
+            },
+            child: const Text('Chat with User'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Navigate to chat screen with specific user
+  void _navigateToChat(String userId, String userName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const Chat(),
+      ),
+    );
+    
+    // Show snackbar with user info since Chat doesn't take parameters
+    _showSnackBar('Navigate to Chat and search for: $userName', const Color(0xff1B1212));
+  }
+
+  // Delete post from user's account (actual deletion)
+  Future<void> _deletePostFromUser(Map<String, dynamic> post) async {
+    try {
+      final postId = post['id']?.toString();
+      final collection = post['collection']?.toString();
+      final userId = post['userId']?.toString();
+      
+      if (postId == null || collection == null) {
+        _showSnackBar('Error: Invalid post data', Colors.red);
+        return;
+      }
+
+      // Show loading
+      _showSnackBar('Deleting post from user account...', Colors.orange);
+
+      // Delete from the original collection
+      await _firestore.collection(collection).doc(postId).delete();
+
+      // If it's a post with media, also delete from media collections
+      if (collection == 'posts') {
+        final mediaFiles = post['mediaFiles'] as List<dynamic>? ?? [];
+        
+        for (var mediaUrl in mediaFiles) {
+          final url = mediaUrl.toString();
+          if (_isVideoUrl(url)) {
+            // Find and delete from post_media_videos
+            final videoQuery = await _firestore
+                .collection('post_media_videos')
+                .where('url', isEqualTo: url)
+                .where('userId', isEqualTo: userId)
+                .get();
+            
+            for (var doc in videoQuery.docs) {
+              await doc.reference.delete();
+            }
+          } else {
+            // Find and delete from post_media_images
+            final imageQuery = await _firestore
+                .collection('post_media_images')
+                .where('url', isEqualTo: url)
+                .where('userId', isEqualTo: userId)
+                .get();
+            
+            for (var doc in imageQuery.docs) {
+              await doc.reference.delete();
+            }
+          }
+        }
+      }
+
+      // Refresh the gallery
+      _refreshGallery();
+      
+      _showSnackBar('Post deleted from user account successfully', Colors.green);
+      
+    } catch (e) {
+      print('Error deleting post from user: $e');
+      _showSnackBar('Error deleting post: $e', Colors.red);
+    }
+  }
+
+  // Delete post from control app only (add to hidden list)
+  Future<void> _deletePostFromControl(Map<String, dynamic> post) async {
+    try {
+      final postId = post['id']?.toString();
+      final collection = post['collection']?.toString();
+      
+      if (postId == null || collection == null) {
+        _showSnackBar('Error: Invalid post data', Colors.red);
+        return;
+      }
+
+      // Show loading
+      _showSnackBar('Removing post from control app...', Colors.orange);
+
+      // Add to hidden posts collection for control app
+      await _firestore.collection('control_hidden_posts').doc('${collection}_$postId').set({
+        'postId': postId,
+        'collection': collection,
+        'hiddenAt': FieldValue.serverTimestamp(),
+        'hiddenBy': 'control_app', // You can add actual admin user ID here
+      });
+
+      // Remove from current display
+      setState(() {
+        _allPosts.removeWhere((p) => p['id'] == postId && p['collection'] == collection);
+        _imagePosts.removeWhere((p) => p['id'] == postId && p['collection'] == collection);
+        _videoPosts.removeWhere((p) => p['id'] == postId && p['collection'] == collection);
+        
+        // Update filtered lists
+        _filterPosts();
+      });
+      
+      _showSnackBar('Post removed from control app', Colors.green);
+      
+    } catch (e) {
+      print('Error removing post from control: $e');
+      _showSnackBar('Error removing post: $e', Colors.red);
+    }
+  }
+
+  // Refresh gallery data
+  void _refreshGallery() {
+    // Clear cache for fresh data
+    _postsCache.clear();
+    _postsCacheTime.clear();
+    _fetchAllPosts();
+  }
+
+  // Show snackbar message
+  void _showSnackBar(String message, Color color) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   // Build post card
   Widget _buildPostCard(Map<String, dynamic> post) {
     final postId = post['id'] ?? '';
@@ -866,6 +1210,45 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
                         ),
                     ],
                   ),
+                ),
+                // Delete buttons
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Color(0xff1B1212)),
+                  onSelected: (value) {
+                    if (value == 'delete_user') {
+                      _showDeleteFromUserDialog(post);
+                    } else if (value == 'delete_control') {
+                      _showDeleteFromControlDialog(post);
+                    }
+                  },
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'delete_user',
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_remove, color: Colors.orange),
+                          SizedBox(width: 8),
+                          Text(
+                            'Delete from User',
+                            style: TextStyle(color: Colors.orange),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'delete_control',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_forever, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text(
+                            'Delete from Control',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1051,25 +1434,61 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
             tooltip: 'Refresh Gallery',
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Color(0xff1B1212),
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: Color(0xff1B1212),
-          tabs: [
-            Tab(
-              text: 'All (${_allPosts.length})',
-              icon: const Icon(Icons.apps),
-            ),
-            Tab(
-              text: 'Images (${_imagePosts.length})',
-              icon: const Icon(Icons.image),
-            ),
-            Tab(
-              text: 'Videos (${_videoPosts.length})',
-              icon: const Icon(Icons.video_library),
-            ),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(100),
+          child: Column(
+            children: [
+              // Search bar
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search by user name or content...',
+                    prefixIcon: const Icon(Icons.search, color: Color(0xff1B1212)),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Color(0xff1B1212)),
+                            onPressed: () {
+                              _searchController.clear();
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(25),
+                      borderSide: const BorderSide(color: Color(0xff1B1212)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(25),
+                      borderSide: const BorderSide(color: Color(0xff1B1212), width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ),
+              // Tab bar
+              TabBar(
+                controller: _tabController,
+                labelColor: Color(0xff1B1212),
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: Color(0xff1B1212),
+                tabs: [
+                  Tab(
+                    text: 'All (${_filteredAllPosts.length})',
+                    icon: const Icon(Icons.apps),
+                  ),
+                  Tab(
+                    text: 'Images (${_filteredImagePosts.length})',
+                    icon: const Icon(Icons.image),
+                  ),
+                  Tab(
+                    text: 'Videos (${_filteredVideoPosts.length})',
+                    icon: const Icon(Icons.video_library),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       body: _isLoading
@@ -1111,11 +1530,11 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
               controller: _tabController,
               children: [
                 // All posts
-                _buildPostsList(_allPosts),
+                _buildPostsList(_filteredAllPosts),
                 // Images only
-                _buildPostsList(_imagePosts),
+                _buildPostsList(_filteredImagePosts),
                 // Videos only
-                _buildPostsList(_videoPosts),
+                _buildPostsList(_filteredVideoPosts),
               ],
             ),
     );

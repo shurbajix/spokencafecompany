@@ -3,7 +3,7 @@ import 'package:spoken_cafe_controller/model/Screen/Chat/Chat.dart';
 import 'package:spoken_cafe_controller/model/Screen/Gallery/Gallery.dart';
 import 'package:spoken_cafe_controller/model/Screen/Home/Home.dart';
 import 'package:spoken_cafe_controller/model/Screen/Home/HomeContect.dart';
-import 'package:spoken_cafe_controller/model/Screen/Settings/Settings.dart';
+import 'package:spoken_cafe_controller/model/Screen/TeacherInfo/TeacherInfo.dart';
 import 'package:spoken_cafe_controller/model/Screen/Students/Students.dart';
 import 'package:spoken_cafe_controller/model/Screen/Teachers/Teachers.dart';
 import 'package:spoken_cafe_controller/model/Screen/TeacherandStudent/TeacherandStudent.dart';
@@ -17,12 +17,14 @@ class Sidebar extends StatefulWidget {
 }
 
 class _SidebarState extends State<Sidebar> {
-  String selectedMenu = 'Gallery'; // Changed default to Gallery
+  String selectedMenu = 'TeacherInfo'; // Changed default to TeacherInfo
 
   @override
   Widget build(BuildContext context) {
+    print('🎨 SideBar: Building with selectedMenu = $selectedMenu');
     // If Gallery is selected, show it full screen without sidebar
     if (selectedMenu == 'Gallery') {
+      print('📱 SideBar: Showing Gallery full screen');
       return const Gallery();
     }
     
@@ -84,8 +86,10 @@ class _SidebarState extends State<Sidebar> {
                       selected: selectedMenu == listhomedashboard[index],
                       selectedTileColor: Colors.orangeAccent,
                       onTap: () {
+                        print('👆 SideBar: Tapped on ${listhomedashboard[index]}');
                         setState(() {
                           selectedMenu = listhomedashboard[index];
+                          print('✅ SideBar: selectedMenu updated to $selectedMenu');
                         });
                       },
                     ),
@@ -114,8 +118,8 @@ class _SidebarState extends State<Sidebar> {
         return Icons.group;
       case 'Chat':
         return Icons.chat;
-      case 'Setting':
-        return Icons.settings;
+      case 'TeacherInfo':
+        return Icons.info;
       case 'Gallery':
         return Icons.browse_gallery;
       default:
@@ -125,22 +129,31 @@ class _SidebarState extends State<Sidebar> {
 
   // Function to return different pages based on selected menu
   Widget getSelectedPage(String menu) {
+    print('🔄 SideBar: getSelectedPage called with menu: $menu');
     switch (menu) {
       case 'Home':
+        print('📍 SideBar: Returning Home page');
         return const HomeContent(isMobile: false);
       case 'Student':
+        print('📍 SideBar: Returning Students page');
         return const Students();
       case 'Teacher':
+        print('📍 SideBar: Returning Teachers page');
         return const Teachers();
       case 'TeacherandStudent':
+        print('📍 SideBar: Returning TeacherandStudent page');
         return const TeacherandStudent();
       case 'Chat':
+        print('📍 SideBar: Returning Chat page');
         return const Chat();
-      case 'Setting':
-        return const Settings();
+      case 'TeacherInfo':
+        print('📍 SideBar: Returning TeacherInfo page');
+        return const TeacherInfo();
       case 'Gallery':
+        print('📍 SideBar: Returning Gallery page');
         return const Gallery();
       default:
+        print('📍 SideBar: Returning default Home page for menu: $menu');
         return const HomeContent(isMobile: false);
     }
   }
@@ -274,6 +287,6 @@ List<String> listhomedashboard = [
   'Teacher',
   'TeacherandStudent',
   'Chat',
-  'Setting',
+  'TeacherInfo',
   'Gallery',
 ];

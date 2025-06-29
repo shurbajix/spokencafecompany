@@ -29,7 +29,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Spoken Cafe Control',
-      home: const Login(),
+      home: const Login(), 
     );
   }
 }
