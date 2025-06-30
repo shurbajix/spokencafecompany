@@ -2,12 +2,12 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:spoken_cafe_controller/SidBar/SideBar.dart'; // Import HomeContent and listhomedashboard
 import 'package:spoken_cafe_controller/model/Screen/Chat/Chat.dart';
+import 'package:spoken_cafe_controller/model/Screen/Gallery/Gallery.dart';
 import 'package:spoken_cafe_controller/model/Screen/Home/HomeContect.dart';
-import 'package:spoken_cafe_controller/model/Screen/Settings/Settings.dart';
 import 'package:spoken_cafe_controller/model/Screen/Students/Students.dart';
 import 'package:spoken_cafe_controller/model/Screen/Teachers/Teachers.dart';
 import 'package:spoken_cafe_controller/model/Screen/TeacherandStudent/TeacherandStudent.dart';
-import 'package:spoken_cafe_controller/model/Screen/Gallery/Gallery.dart';
+import 'package:spoken_cafe_controller/model/Screen/StudentInfo/StudentInfo.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -20,8 +20,8 @@ class _HomeState extends State<Home> {
   // Check if the platform is desktop
   bool get isDesktop => Platform.isMacOS || Platform.isWindows;
 
-  // Track selected menu item - Changed default to Gallery
-  String _selectedMenu = 'Gallery';
+  // Track selected menu item - Changed default to StudentInfo
+  String _selectedMenu = 'StudentInfo';
 
   // Handle menu selection
   void _onMenuSelected(String menu) {
@@ -34,9 +34,7 @@ class _HomeState extends State<Home> {
   Widget build(BuildContext context) {
     if (isDesktop) {
       // Desktop: Use Sidebar
-      return const Sidebar(
-        
-      );
+      return const Sidebar();
     } else {
       // Mobile: Use BottomNavigationBar
       return Scaffold(
@@ -52,7 +50,7 @@ class _HomeState extends State<Home> {
         ),
         bottomNavigationBar: BottomNavigationBar(
           backgroundColor: Colors.white,
-          
+          type: BottomNavigationBarType.fixed, // Fixed type to handle more than 3 items
           items: listhomedashboard
               .map((item) => BottomNavigationBarItem(
                 backgroundColor: Colors.white,
@@ -80,11 +78,11 @@ class _HomeState extends State<Home> {
       case 'Teacher':
         return Icons.school;
       case 'TeacherandStudent':
-        return Icons.dashboard;
+        return Icons.group;
       case 'Chat':
         return Icons.chat;
-      case 'Setting':
-        return Icons.settings;
+      case 'StudentInfo':
+        return Icons.account_circle;
       case 'Gallery':
         return Icons.browse_gallery;
       default:
@@ -105,12 +103,12 @@ class _HomeState extends State<Home> {
         return const TeacherandStudent();
       case 'Chat':
         return const Chat();
-      case 'Setting':
-        return const Settings();
+      case 'StudentInfo':
+        return const StudentInfo();
       case 'Gallery':
         return const Gallery();
       default:
-        return const Gallery();
+        return const HomeContent(isMobile: true);
     }
   }
 }

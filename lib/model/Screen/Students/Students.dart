@@ -91,6 +91,303 @@ class _StudentsState extends State<Students> {
     _fetchStudents();
   }
 
+  // First Delete - Send Warning Message via Chat
+  void _showWarningDialog(Student student) {
+    final messageController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text('Send Warning Message'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Send a warning message to ${student.name}'),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: messageController,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  hintText: 'Explain what the student did wrong...',
+                  labelText: 'Warning Message',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (messageController.text.trim().isNotEmpty) {
+                  await _sendWarningMessage(student, messageController.text.trim());
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Send Warning', style: TextStyle(color: Colors.orange)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Second Delete - Restrict User Abilities
+  void _showRestrictDialog(Student student) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text('Restrict User'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Restrict ${student.name}\'s account?'),
+              const SizedBox(height: 16),
+              const Text('This will:'),
+              const Text('• Disable posting (floating action button)'),
+              const Text('• Disable commenting'),
+              const Text('• Hide taken lessons (can\'t take new lessons)'),
+              const SizedBox(height: 16),
+              const Text('The user will still be able to log in but with limited functionality.'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () async {
+                await _restrictUser(student);
+                Navigator.pop(context);
+              },
+              child: const Text('Restrict User', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Third Delete - Delete Account Completely
+  void _showDeleteAccountDialog(Student student) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text('Delete Account'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Permanently delete ${student.name}\'s account?'),
+              const SizedBox(height: 16),
+              const Text('⚠️ WARNING: This action cannot be undone!'),
+              const SizedBox(height: 8),
+              const Text('This will:'),
+              const Text('• Delete the user account completely'),
+              const Text('• Remove all user data'),
+              const Text('• Remove all posts and comments'),
+              const Text('• Cancel all taken lessons'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () async {
+                await _deleteUserAccount(student);
+                Navigator.pop(context);
+              },
+              child: const Text('DELETE ACCOUNT', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Implementation methods for the three delete actions
+  Future<void> _sendWarningMessage(Student student, String message) async {
+    try {
+      // Create a chat message in the control app's chat system
+      await FirebaseFirestore.instance.collection('control_messages').add({
+        'recipientId': student.docId,
+        'recipientName': student.name,
+        'recipientEmail': student.email,
+        'message': message,
+        'timestamp': FieldValue.serverTimestamp(),
+        'type': 'warning',
+        'isRead': false,
+        'sentBy': 'Control App',
+      });
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Warning message sent to ${student.name}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error sending warning: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _restrictUser(Student student) async {
+    try {
+      // Add user to restricted users collection
+      await FirebaseFirestore.instance.collection('restricted_users').doc(student.docId).set({
+        'userId': student.docId,
+        'userName': student.name,
+        'userEmail': student.email,
+        'restrictedAt': FieldValue.serverTimestamp(),
+        'restrictions': {
+          'canPost': false,
+          'canComment': false,
+          'canTakeLessons': false,
+        },
+        'restrictedBy': 'Control App',
+      });
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${student.name} has been restricted'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error restricting user: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteUserAccount(Student student) async {
+    try {
+      // Delete user from users collection
+      await FirebaseFirestore.instance.collection('users').doc(student.docId).delete();
+
+      // Delete user posts
+      final postsQuery = await FirebaseFirestore.instance
+          .collection('posts')
+          .where('userId', isEqualTo: student.docId)
+          .get();
+      
+      for (var doc in postsQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Delete user comments
+      final commentsQuery = await FirebaseFirestore.instance
+          .collection('comments')
+          .where('userId', isEqualTo: student.docId)
+          .get();
+      
+      for (var doc in commentsQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Delete taken lessons
+      final takenLessonsQuery = await FirebaseFirestore.instance
+          .collection('takenLessons')
+          .where('studentId', isEqualTo: student.docId)
+          .get();
+      
+      for (var doc in takenLessonsQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Remove from local list
+      setState(() {
+        students.removeWhere((s) => s.docId == student.docId);
+      });
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${student.name}\'s account has been deleted'),
+            backgroundColor: Colors.black,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting account: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Accept student and enable delete functionality in main app
+  Future<void> _acceptStudent(Student student) async {
+    try {
+      // Enable delete functionality by adding student to accepted collection
+      await FirebaseFirestore.instance.collection('accepted_students').doc(student.docId).set({
+        'studentId': student.docId,
+        'studentName': student.name,
+        'studentEmail': student.email,
+        'acceptedAt': FieldValue.serverTimestamp(),
+        'acceptedBy': 'Control App',
+        'deleteButtonsEnabled': true,
+      });
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${student.name} accepted - Delete buttons enabled in main app'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error accepting student: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _fetchStudents() async {
     if (_hasFetched) return;
     _hasFetched = true;
@@ -206,21 +503,21 @@ class _StudentsState extends State<Students> {
       // Approach 2: If gallery save failed, save to Downloads folder
       if (!success) {
         try {
-          Directory? downloadsDir;
+          Directory? downloadsDir; 
           
-          if (Platform.isAndroid) {
+      if (Platform.isAndroid) {
             downloadsDir = Directory('/storage/emulated/0/Download');
             if (!await downloadsDir.exists()) {
               downloadsDir = await getApplicationDocumentsDirectory();
             }
-          } else {
-            downloadsDir = await getApplicationDocumentsDirectory();
-          }
+      } else {
+            downloadsDir = await getApplicationDocumentsDirectory(); 
+      }
 
           if (downloadsDir != null) {
             final filePath = '${downloadsDir.path}/$fileName';
-            
-            Dio dio = Dio();
+
+      Dio dio = Dio();
             await dio.download(
               imageUrl,
               filePath,
@@ -264,7 +561,7 @@ class _StudentsState extends State<Students> {
       }
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Image saved to $savedPath successfully! 📷'),
             backgroundColor: Colors.green,
@@ -467,58 +764,47 @@ class _StudentsState extends State<Students> {
                                         return ListTile(
                                           contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                                           trailing: SizedBox(
-                                            width: 279,
+                                            width: 400,
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Expanded(
                                                   child: TextButton(
-                                                    onPressed: () {
-                                                      // Implement accept logic or disable if you want
-                                                    },
+                                                    onPressed: () => _acceptStudent(s),
                                                     child: const Text(
                                                       'Accept',
-                                                      style: TextStyle(color: Colors.green, fontSize: 20),
+                                                      style: TextStyle(color: Colors.green, fontSize: 16),
                                                     ),
                                                   ),
                                                 ),
+                                                // First Delete - Warning Message
                                                 Expanded(
                                                   child: TextButton(
-                                                    onPressed: () {
-                                                      showDialog(
-                                                        context: context,
-                                                        builder: (context) {
-                                                          final ctrl = TextEditingController();
-                                                          return AlertDialog(
-                                                            backgroundColor: Colors.white,
-                                                            title: const Text('Write the Reason for rejection'),
-                                                            content: TextFormField(
-                                                              controller: ctrl,
-                                                              decoration: InputDecoration(
-                                                                border: OutlineInputBorder(
-                                                                  borderRadius: BorderRadius.circular(10),
-                                                                ),
-                                                                hintText: 'Enter reason',
-                                                              ),
-                                                            ),
-                                                            actions: [
-                                                              TextButton(
-                                                                onPressed: () => Navigator.pop(context),
-                                                                child: const Text('Cancel', style: TextStyle(color: Colors.red, fontSize: 20)),
-                                                              ),
-                                                              TextButton(
-                                                                onPressed: () {
-                                                                  // Implement rejection logic here with ctrl.text
-                                                                  Navigator.pop(context);
-                                                                },
-                                                                child: const Text('Reject', style: TextStyle(color: Colors.red, fontSize: 20)),
-                                                              ),
-                                                            ],
-                                                          );
-                                                        },
-                                                      );
-                                                    },
-                                                    child: const Text('Delete', style: TextStyle(color: Colors.red, fontSize: 20)),
+                                                    onPressed: () => _showWarningDialog(s),
+                                                    child: const Text(
+                                                      'Warning',
+                                                      style: TextStyle(color: Colors.orange, fontSize: 16),
+                                                    ),
+                                                  ),
+                                                ),
+                                                // Second Delete - Restrict User
+                                                Expanded(
+                                                  child: TextButton(
+                                                    onPressed: () => _showRestrictDialog(s),
+                                                    child: const Text(
+                                                      'Restrict',
+                                                      style: TextStyle(color: Colors.red, fontSize: 16),
+                                                    ),
+                                                  ),
+                                                ),
+                                                // Third Delete - Delete Account
+                                                Expanded(
+                                                  child: TextButton(
+                                                    onPressed: () => _showDeleteAccountDialog(s),
+                                                    child: const Text(
+                                                      'Delete',
+                                                      style: TextStyle(color: Colors.black, fontSize: 16),
+                                                    ),
                                                   ),
                                                 ),
                                                 Expanded(
@@ -531,7 +817,7 @@ class _StudentsState extends State<Students> {
                                                       });
                                                       Scaffold.of(context).openEndDrawer();
                                                     },
-                                                    child: const Text('View', style: TextStyle(color: Colors.black, fontSize: 20)),
+                                                    child: const Text('View', style: TextStyle(color: Colors.blue, fontSize: 16)),
                                                   ),
                                                 ),
                                               ],
@@ -896,18 +1182,18 @@ class _StudentsState extends State<Students> {
                             mainAxisSpacing: 8,
                             childAspectRatio: 0.8,
                           ),
-                          itemCount: videos.length,
-                          itemBuilder: (context, index) {
-                            final videoUrl = videos[index];
+                        itemCount: videos.length,
+                        itemBuilder: (context, index) {
+                          final videoUrl = videos[index];
                             return _buildVideoCard(videoUrl, index);
                           },
                         ),
                       ),
               ],
-            ),
-          ),
-        );
-      },
+                              ),
+                            ),
+                          );
+                        },
     );
   }
 
@@ -1064,9 +1350,9 @@ class _StudentsState extends State<Students> {
                             color: Colors.grey[300],
                             child: const Center(
                               child: Icon(Icons.image, color: Colors.grey, size: 50),
-                            ),
-                          );
-                        },
+          ),
+        );
+      },
                       ),
                     ),
                     // Image indicator
@@ -1424,15 +1710,15 @@ class _StudentsState extends State<Students> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (postData['text'] != null && postData['text'].isNotEmpty)
-                      Text(
-                        postData['text'],
-                        style: const TextStyle(fontSize: 16, color: Colors.black87),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (postData['text'] != null && postData['text'].isNotEmpty)
+            Text(
+              postData['text'],
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),
@@ -1487,7 +1773,7 @@ class _StudentsState extends State<Students> {
                 ],
               ),
             ],
-          ),
+            ),
           if (postData['description'] != null && postData['description'].isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6.0, bottom: 6.0),

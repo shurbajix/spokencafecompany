@@ -1544,8 +1544,8 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
     if (posts.isEmpty) {
       return Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
             Icon(
               Icons.photo_library_outlined,
               size: 64,

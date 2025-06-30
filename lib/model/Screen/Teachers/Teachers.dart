@@ -518,10 +518,10 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
     _hasFetched = true;
 
     if (mounted) {
-      setState(() {
-        isLoading = true;
-        errorMessage = null;
-      });
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
     }
 
     try {
@@ -553,27 +553,27 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       _resetFirebaseConnection();
 
       if (mounted) {
-        setState(() => isLoading = false);
+      setState(() => isLoading = false);
         // Preload media for better UX  
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) _preloadMediaForVisibleTeachers(); 
         });
       } 
-    } on FirebaseException catch (e) { 
+    } on FirebaseException catch (e) {
       print('Firebase error: ${e.code} - ${e.message}'); 
       if (mounted) {
-        setState(() {
-          errorMessage = _handleFirebaseError(e);
-          isLoading = false;
-        });
+      setState(() {
+        errorMessage = _handleFirebaseError(e);
+        isLoading = false;
+      });
       }
     } catch (e) {
       print('General error: $e');
       if (mounted) {
-        setState(() {
-          errorMessage = 'Error: ${e.toString()}';
-          isLoading = false;
-        });
+      setState(() {
+        errorMessage = 'Error: ${e.toString()}';
+        isLoading = false;
+      });
       }
     }
   }
@@ -591,54 +591,109 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
 
   Future<void> _approve(String docId) async {
     try {
+      // Update the user's approval status
       await _usersCollection.doc(docId).update({
         'isApproved': true,
         'rejectionReason': null,
+        'approvedAt': FieldValue.serverTimestamp(),
       });
+      
+      // Also add to accepted_students collection to enable functionality
+      await FirebaseFirestore.instance
+          .collection('accepted_students')
+          .doc(docId)
+          .set({
+        'userId': docId,
+        'isApproved': true,
+        'deleteButtonsEnabled': true, // Enable admin delete buttons
+        'canPost': true, // Enable posting
+        'canComment': true, // Enable commenting
+        'canAccessNotifications': true, // Enable notifications
+        'canCreateLessons': true, // Enable lesson creation
+        'approvedAt': FieldValue.serverTimestamp(),
+        'approvedBy': 'admin',
+      });
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Teacher approved')),
+        const SnackBar(
+          content: Text('Teacher approved - All features enabled!'),
+          backgroundColor: Colors.green,
+        ),
       );
       _hasFetched = false;
       await _fetchTeachers();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Approve failed: $e')),
+        SnackBar(
+          content: Text('Approve failed: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   Future<void> _reject(String docId, String reason) async {
     try {
+      // Update the user's approval status
       await _usersCollection.doc(docId).update({
         'isApproved': false,
         'rejectionReason': reason,
+        'rejectedAt': FieldValue.serverTimestamp(),
       });
+      
+      // Remove from accepted_students collection to disable functionality
+      await FirebaseFirestore.instance
+          .collection('accepted_students')
+          .doc(docId)
+          .delete();
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Teacher rejected')),
+        const SnackBar(
+          content: Text('Teacher rejected - Features disabled'),
+          backgroundColor: Colors.orange,
+        ),
       );
       _hasFetched = false;
       await _fetchTeachers();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reject failed: $e')),
+        SnackBar(
+          content: Text('Reject failed: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   Future<void> _reactivate(String docId) async {
     try {
+      // Update the user's approval status (back to pending)
       await _usersCollection.doc(docId).update({
         'isApproved': false,
         'rejectionReason': null,
+        'reactivatedAt': FieldValue.serverTimestamp(),
       });
+      
+      // Remove from accepted_students collection to disable functionality
+      await FirebaseFirestore.instance
+          .collection('accepted_students')
+          .doc(docId)
+          .delete();
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Teacher reactivated')),
+        const SnackBar(
+          content: Text('Teacher reactivated - Waiting for approval'),
+          backgroundColor: Colors.blue,
+        ),
       );
       _hasFetched = false;
       await _fetchTeachers();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reactivate failed: $e')),
+        SnackBar(
+          content: Text('Reactivate failed: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -744,19 +799,19 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
         try {
           Directory? downloadsDir;
           
-          if (Platform.isAndroid) {
+      if (Platform.isAndroid) {
             downloadsDir = Directory('/storage/emulated/0/Download');
             if (!await downloadsDir.exists()) {
               downloadsDir = await getApplicationDocumentsDirectory();
             }
-          } else {
+      } else {
             downloadsDir = await getApplicationDocumentsDirectory();
-          }
+      }
 
           if (downloadsDir != null) {
             final filePath = '${downloadsDir.path}/$fileName';
-            
-            Dio dio = Dio();
+
+      Dio dio = Dio();
             await dio.download(
               imageUrl,
               filePath,
@@ -800,7 +855,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       }
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Image saved to $savedPath successfully! 📷'),
             backgroundColor: Colors.green,
@@ -958,127 +1013,127 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       ),
       body: SingleChildScrollView(
         child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: TextField(
-                decoration: InputDecoration(
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xff1B1212)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xff1B1212)),
-                  ),
-                  hintText: 'Search by name, email or phone',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.grey),
-                  ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              decoration: InputDecoration(
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xff1B1212)),
                 ),
-                onChanged: (val) => setState(() => _searchQuery = val),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xff1B1212)),
+                ),
+                hintText: 'Search by name, email or phone',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Colors.grey),
+                ),
               ),
+              onChanged: (val) => setState(() => _searchQuery = val),
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Column(
-                      children: [
-                        Text('Underlines', style: TextStyle(fontSize: 20)),
-                      ],
-                    ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Column(
+                    children: [
+                      Text('Underlines', style: TextStyle(fontSize: 20)),
+                    ],
                   ),
                 ),
+              ),
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Column(
+                    children: [
+                      Text('Underlines', style: TextStyle(fontSize: 20)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Container(
+            margin: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            height: 600,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Text(
+                    "Teachers List",
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const Divider(),
+                TabBar(
+                  controller: _tabController,
+                  onTap: (index) {
+                    if (index >= 0 && index < 3) {
+                      setState(() {});
+                    }
+                  },
+                  labelColor: Colors.black,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.blue,
+                  tabs: const [
+                    Tab(
+                      icon: Icon(Icons.person_add,color: Colors.black,),
+                      text: 'New Teachers',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.check_circle,color: Colors.green,),
+                      text: 'Active Teachers',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.cancel,color: Colors.red,),
+                      text: 'Rejected Teachers',
+                    ),
+                  ],
+                ),
                 Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Column(
-                      children: [
-                        Text('Underlines', style: TextStyle(fontSize: 20)),
-                      ],
-                    ),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildTeachersList(),
+                      _buildTeachersList(),
+                      _buildTeachersList(),
+                    ],
                   ),
                 ),
               ],
             ),
-            Container(
-              margin: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              height: 600,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: Text(
-                      "Teachers List",
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(),
-                  TabBar(
-                    controller: _tabController,
-                    onTap: (index) {
-                      if (index >= 0 && index < 3) {
-                        setState(() {});
-                      }
-                    },
-                    labelColor: Colors.black,
-                    unselectedLabelColor: Colors.grey,
-                    indicatorColor: Colors.blue,
-                    tabs: const [
-                      Tab(
-                        icon: Icon(Icons.person_add,color: Colors.black,),
-                        text: 'New Teachers',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.check_circle,color: Colors.green,),
-                        text: 'Active Teachers',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.cancel,color: Colors.red,),
-                        text: 'Rejected Teachers',
-                      ),
-                    ],
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildTeachersList(),
-                        _buildTeachersList(),
-                        _buildTeachersList(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          ),
             // Add Lessons Section
             _buildLessonsSection(),
             // Add bottom padding to ensure content is not cut off
             const SizedBox(height: 20),
-          ],
+        ],
         ),
       ),
     );
@@ -1477,8 +1532,8 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
+                child: Column(
+                  children: [
                       Row(
                         children: [
                           IconButton(
@@ -1807,9 +1862,9 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                             mainAxisSpacing: 8,
                             childAspectRatio: 0.8,
                           ),
-                          itemCount: videos.length,
-                          itemBuilder: (context, index) {
-                            final videoUrl = videos[index];
+                        itemCount: videos.length,
+                        itemBuilder: (context, index) {
+                          final videoUrl = videos[index];
                             return _buildVideoCard(videoUrl, index);
                           },
                         ),
@@ -2277,15 +2332,15 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (postData['text'] != null && postData['text'].isNotEmpty)
-                      Text(
-                        postData['text'],
-                        style: const TextStyle(fontSize: 16, color: Colors.black87),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (postData['text'] != null && postData['text'].isNotEmpty)
+            Text(
+              postData['text'],
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),
@@ -2340,7 +2395,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                 ],
               ),
             ],
-          ),
+            ),
           if (postData['description'] != null && postData['description'].isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6.0, bottom: 6.0),
@@ -3460,10 +3515,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
       ..initialize().then((_) {
         if (mounted) {
-          setState(() {
-            _initialized = true;
-          });
-          _controller.play();
+        setState(() {
+          _initialized = true;
+        });
+        _controller.play();
         }
       }).catchError((error) {
         print('🎬 Video player error: $error');

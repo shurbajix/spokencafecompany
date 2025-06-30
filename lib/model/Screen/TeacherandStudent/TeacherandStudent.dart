@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 class TeacherandStudent extends StatefulWidget {
   const TeacherandStudent({super.key});
@@ -47,31 +49,59 @@ class _TeacherandStudentState extends State<TeacherandStudent>
     };
   }
 
-  // Get teacher's student count for today
+  // Get teacher's student count for today - FIXED VERSION
   Future<Map<String, int>> getTeacherStudentCount(String teacherId) async {
     final todayRange = getTodayRange();
     int normalLessons = 0;
     int activityLessons = 0;
 
     try {
+      print('DEBUG: Querying takenLessons for teacher: $teacherId');
+      print('DEBUG: Date range: ${todayRange['start']} to ${todayRange['end']}');
+      
       // Query takenLessons for today with this teacher
       final takenLessonsQuery = await _firestore
           .collection('takenLessons')
           .where('teacherId', isEqualTo: teacherId)
-          .where('dateTime', isGreaterThanOrEqualTo: Timestamp.fromDate(todayRange['start']!))
-          .where('dateTime', isLessThanOrEqualTo: Timestamp.fromDate(todayRange['end']!))
-          .get();
+          .get(); // Remove date filter temporarily to debug
 
+      print('DEBUG: Found ${takenLessonsQuery.docs.length} total takenLessons for teacher $teacherId');
+
+      // Filter by date manually and get lesson details
       for (var doc in takenLessonsQuery.docs) {
         final data = doc.data();
-        final lessonType = data['lessonType'] ?? 'normal'; // Default to normal if not specified
+        print('DEBUG: takenLesson doc data: $data');
         
-        if (lessonType == 'activity') {
+        // Check if lesson is from today
+        final lessonDateTime = data['dateTime'];
+        DateTime lessonDate;
+        
+        if (lessonDateTime is Timestamp) {
+          lessonDate = lessonDateTime.toDate();
+        } else if (lessonDateTime is String) {
+          lessonDate = DateTime.tryParse(lessonDateTime) ?? DateTime.now();
+        } else {
+          continue; // Skip if dateTime format is unknown
+        }
+        
+        // Check if lesson is from today
+        if (lessonDate.isBefore(todayRange['start']!) || lessonDate.isAfter(todayRange['end']!)) {
+          continue; // Skip lessons not from today
+        }
+        
+        // Get the speakLevel from the takenLesson data (copied from original lesson)
+        final speakLevel = data['speakLevel'] ?? 'normal';
+        print('DEBUG: Lesson speakLevel: $speakLevel');
+        
+        // Count based on speakLevel (Activity lessons vs Normal lessons)
+        if (speakLevel.toLowerCase() == 'activity') {
           activityLessons++;
         } else {
           normalLessons++;
         }
       }
+      
+      print('DEBUG: Final counts - Normal: $normalLessons, Activity: $activityLessons');
     } catch (e) {
       print('Error getting teacher student count: $e');
     }
@@ -82,49 +112,225 @@ class _TeacherandStudentState extends State<TeacherandStudent>
     };
   }
 
-  // Check if teacher has lessons in the last 24 hours
+  // Check if teacher has lessons in the last 24 hours - FIXED VERSION
   Future<bool> teacherHasRecentLessons(String teacherId) async {
     final last24Hours = getLast24HoursRange();
     
     try {
-      final recentLessonsQuery = await _firestore
+      print('DEBUG: Checking recent lessons for teacher: $teacherId');
+      
+      // First, let's check all takenLessons for this teacher
+      final allLessonsQuery = await _firestore
           .collection('takenLessons')
           .where('teacherId', isEqualTo: teacherId)
-          .where('dateTime', isGreaterThanOrEqualTo: Timestamp.fromDate(last24Hours['start']!))
-          .where('dateTime', isLessThanOrEqualTo: Timestamp.fromDate(last24Hours['end']!))
-          .limit(1) // We only need to know if there's at least one
           .get();
-
-      return recentLessonsQuery.docs.isNotEmpty;
+      
+      print('DEBUG: Total takenLessons for teacher $teacherId: ${allLessonsQuery.docs.length}');
+      
+      // Check each lesson manually for date range
+      for (var doc in allLessonsQuery.docs) {
+        final data = doc.data();
+        final lessonDateTime = data['dateTime'];
+        DateTime lessonDate;
+        
+        if (lessonDateTime is Timestamp) {
+          lessonDate = lessonDateTime.toDate();
+        } else if (lessonDateTime is String) {
+          lessonDate = DateTime.tryParse(lessonDateTime) ?? DateTime.now();
+        } else {
+          continue;
+        }
+        
+        // Check if lesson is within last 24 hours
+        if (lessonDate.isAfter(last24Hours['start']!) && lessonDate.isBefore(last24Hours['end']!)) {
+          print('DEBUG: Teacher $teacherId has recent lesson at $lessonDate');
+          return true;
+        }
+      }
+      
+      print('DEBUG: Teacher $teacherId has NO recent lessons');
+      return false;
     } catch (e) {
       print('Error checking recent lessons: $e');
       return false;
     }
   }
 
-  // Get filtered teachers (only those with lessons in last 24 hours)
-  Future<List<QueryDocumentSnapshot>> getActiveTeachers(List<QueryDocumentSnapshot> allTeachers) async {
-    List<QueryDocumentSnapshot> activeTeachers = [];
-    
-    for (var teacher in allTeachers) {
-      final teacherId = teacher.id;
-      final hasRecentLessons = await teacherHasRecentLessons(teacherId);
+  // Get teacher's IBAN information from user_settings
+  Future<Map<String, dynamic>?> getTeacherIBANInfo(String teacherId) async {
+    try {
+      print('DEBUG: 🔍 Fetching IBAN info for teacher: $teacherId');
+      print('DEBUG: 📂 Querying user_settings collection...');
       
-      if (hasRecentLessons) {
-        activeTeachers.add(teacher);
+      final doc = await _firestore
+          .collection('user_settings')
+          .doc(teacherId)
+          .get();
+
+      print('DEBUG: 📄 Document exists: ${doc.exists}');
+      
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        print('DEBUG: 📋 Raw user_settings data: $data');
+        
+        final ibanInfo = {
+          'iban': data['iban'] ?? '',
+          'holderName': data['holderName'] ?? '',
+          'phoneNumber': data['phoneNumber'] ?? '',
+          'hasIBANInfo': true,
+        };
+        
+        print('DEBUG: ✅ IBAN info found for teacher $teacherId:');
+        print('DEBUG: - IBAN: ${ibanInfo['iban']}');
+        print('DEBUG: - Holder Name: ${ibanInfo['holderName']}');
+        print('DEBUG: - Phone: ${ibanInfo['phoneNumber']}');
+        
+        return ibanInfo;
+      } else {
+        print('DEBUG: ❌ No IBAN info found for teacher $teacherId');
+        print('DEBUG: - Document exists: ${doc.exists}');
+        print('DEBUG: - Document data: ${doc.data()}');
+        return null;
       }
+    } catch (e) {
+      print('DEBUG: ❌ Error getting teacher IBAN info for $teacherId: $e');
+      print('DEBUG: Error details: ${e.toString()}');
+      return null;
     }
-    
-    return activeTeachers;
+  }
+
+  // Get all teachers with their lesson data and IBAN information - ENHANCED VERSION
+  Future<List<Map<String, dynamic>>> getTeachersWithLessonData() async {
+    try {
+      print('DEBUG: Starting to get teachers with lesson data and IBAN info...');
+      
+      // Get all approved teachers
+      final teachersQuery = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'teacher')
+          .where('isApproved', isEqualTo: true)
+          .get();
+
+      print('DEBUG: Found ${teachersQuery.docs.length} approved teachers');
+
+      // Get all takenLessons from last 24 hours
+      final last24Hours = getLast24HoursRange();
+      final recentTakenLessons = await _firestore
+          .collection('takenLessons')
+          .get(); // Get all for now, filter manually
+
+      print('DEBUG: Found ${recentTakenLessons.docs.length} total takenLessons');
+
+      // Group lessons by teacher and filter by date
+      Map<String, List<Map<String, dynamic>>> teacherLessons = {};
+      
+      for (var lessonDoc in recentTakenLessons.docs) {
+        final lessonData = lessonDoc.data();
+        final teacherId = lessonData['teacherId'];
+        final lessonDateTime = lessonData['dateTime'];
+        
+        if (teacherId == null) continue;
+        
+        DateTime lessonDate;
+        if (lessonDateTime is Timestamp) {
+          lessonDate = lessonDateTime.toDate();
+        } else if (lessonDateTime is String) {
+          lessonDate = DateTime.tryParse(lessonDateTime) ?? DateTime.now();
+        } else {
+          continue;
+        }
+        
+        // Check if lesson is within last 24 hours
+        if (lessonDate.isAfter(last24Hours['start']!) && lessonDate.isBefore(last24Hours['end']!)) {
+          if (!teacherLessons.containsKey(teacherId)) {
+            teacherLessons[teacherId] = [];
+          }
+          teacherLessons[teacherId]!.add({
+            ...lessonData,
+            'lessonDate': lessonDate,
+          });
+        }
+      }
+
+      print('DEBUG: Teachers with recent lessons: ${teacherLessons.keys.length}');
+
+      // Build result list with teacher data, lesson counts, and IBAN info
+      List<Map<String, dynamic>> result = [];
+      
+      for (var teacherDoc in teachersQuery.docs) {
+        final teacherId = teacherDoc.id;
+        final teacherData = teacherDoc.data();
+        
+        // Get IBAN information for this teacher (regardless of lessons)
+        print('DEBUG: 🔍 Getting IBAN info for teacher: $teacherId');
+        final ibanInfo = await getTeacherIBANInfo(teacherId);
+        print('DEBUG: 📊 IBAN info result for $teacherId: ${ibanInfo != null ? 'Found' : 'Not found'}');
+        
+        // Initialize lesson counts
+        int normalCount = 0;
+        int activityCount = 0;
+        
+        // Check if teacher has recent lessons
+        if (teacherLessons.containsKey(teacherId)) {
+          final lessons = teacherLessons[teacherId]!;
+          
+          // Count lessons by type for today
+          final todayRange = getTodayRange();
+          
+          for (var lesson in lessons) {
+            final lessonDate = lesson['lessonDate'] as DateTime;
+            
+            // Only count lessons from today
+            if (lessonDate.isAfter(todayRange['start']!) && lessonDate.isBefore(todayRange['end']!)) {
+              final speakLevel = lesson['speakLevel'] ?? 'normal';
+              if (speakLevel.toLowerCase() == 'activity') {
+                activityCount++;
+              } else {
+                normalCount++;
+              }
+            }
+          }
+          
+          print('DEBUG: 📚 Teacher $teacherId has $normalCount normal and $activityCount activity lessons today');
+        } else {
+          print('DEBUG: 📚 Teacher $teacherId has no recent lessons');
+        }
+        
+        // Add teacher to result (regardless of lesson count)
+        result.add({
+          'teacherId': teacherId,
+          'teacherData': teacherData,
+          'normalCount': normalCount,
+          'activityCount': activityCount,
+          'totalCount': normalCount + activityCount,
+          'ibanInfo': ibanInfo,
+          'hasRecentLessons': teacherLessons.containsKey(teacherId),
+        });
+      }
+      
+      print('DEBUG: Final result: ${result.length} active teachers');
+      
+      // Count teachers with IBAN info
+      int teachersWithIBAN = 0;
+      for (var teacher in result) {
+        final ibanInfo = teacher['ibanInfo'] as Map<String, dynamic>?;
+        if (ibanInfo != null && ibanInfo['hasIBANInfo'] == true) {
+          teachersWithIBAN++;
+        }
+      }
+      print('DEBUG: 📊 Summary - Teachers with IBAN info: $teachersWithIBAN out of ${result.length}');
+      
+      return result;
+      
+    } catch (e) {
+      print('ERROR: Error getting teachers with lesson data: $e');
+      return [];
+    }
   }
 
   Widget _buildTeacherDashboard() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'teacher')
-          .where('isApproved', isEqualTo: true) // Only approved teachers
-          .snapshots(),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: getTeachersWithLessonData(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -137,251 +343,244 @@ class _TeacherandStudentState extends State<TeacherandStudent>
 
         if (snapshot.hasError) {
           return Center(
-            child: Text('Error: ${snapshot.error}'),
-          );
-        }
-
-        final allTeachers = snapshot.data?.docs ?? [];
-
-        if (allTeachers.isEmpty) {
-          return const Center(
-            child: Text(
-              'No approved teachers found',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey,
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
             ),
           );
         }
 
-        // Filter teachers to only show those with lessons in last 24 hours
-        return FutureBuilder<List<QueryDocumentSnapshot>>(
-          future: getActiveTeachers(allTeachers),
-          builder: (context, activeTeachersSnapshot) {
-            if (activeTeachersSnapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(
-                  color: Color(0xff1B1212),
-                  backgroundColor: Colors.white,
-                ),
-              );
-            }
+        final teachersWithLessons = snapshot.data ?? [];
 
-            final activeTeachers = activeTeachersSnapshot.data ?? [];
-
-            if (activeTeachers.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.schedule,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'No Active Teachers',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Teachers will appear here when students take lessons with them',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Auto-refresh every 24 hours',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            return Column(
+        if (teachersWithLessons.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Header with today's date and active count
-                Container(
+                Icon(
+                  Icons.schedule,
+                  size: 64,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'No Active Teachers',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Teachers will appear here when students take lessons with them',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Auto-refresh every 24 hours',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[500],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xff1B1212),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Refresh'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            // Header with today's date and active count
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Color(0xff1B1212),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today, color: Colors.white),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Today\'s Lessons - ${DateFormat('yyyy/MM/dd').format(DateTime.now())}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.people, color: Colors.white70, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        'All Approved Teachers: ${teachersWithLessons.length}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            // Legend
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Normal Lessons (Max: 8)'),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Activity Lessons (Max: 20)'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Teachers list
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  setState(() {});
+                },
+                child: ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Color(0xff1B1212),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.calendar_today, color: Colors.white),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Today\'s Lessons - ${DateFormat('yyyy/MM/dd').format(DateTime.now())}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(Icons.people, color: Colors.white70, size: 16),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Active Teachers: ${activeTeachers.length} (Last 24h)',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                
-                // Legend
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 16,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: Colors.blue,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text('Normal Lessons (Max: 8)'),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          Container(
-                            width: 16,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text('Activity Lessons (Max: 20)'),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                  itemCount: teachersWithLessons.length,
+                  itemBuilder: (context, index) {
+                    final teacherInfo = teachersWithLessons[index];
+                    final teacherData = teacherInfo['teacherData'] as Map<String, dynamic>;
+                    final teacherId = teacherInfo['teacherId'] as String;
+                    final teacherName = teacherData['name'] ?? 'Unknown Teacher';
+                    final profileImageUrl = teacherData['profileImageUrl'] ?? '';
+                    final normalCount = teacherInfo['normalCount'] as int;
+                    final activityCount = teacherInfo['activityCount'] as int;
+                    final totalCount = teacherInfo['totalCount'] as int;
+                    final ibanInfo = teacherInfo['ibanInfo'] as Map<String, dynamic>?;
+                    final hasRecentLessons = teacherInfo['hasRecentLessons'] as bool;
 
-                // Teachers list
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: activeTeachers.length,
-                    itemBuilder: (context, index) {
-                      final teacher = activeTeachers[index];
-                      final teacherData = teacher.data() as Map<String, dynamic>;
-                      final teacherId = teacher.id;
-                      final teacherName = teacherData['name'] ?? 'Unknown Teacher';
-                      final profileImageUrl = teacherData['profileImageUrl'] ?? '';
+                    // Debug logging for UI
+                    print('DEBUG: 🎨 Building UI for teacher: $teacherName');
+                    print('DEBUG: 🎨 IBAN info for UI: ${ibanInfo != null ? 'Available' : 'Not available'}');
+                    print('DEBUG: 🎨 Has recent lessons: $hasRecentLessons');
+                    if (ibanInfo != null) {
+                      print('DEBUG: 🎨 IBAN details: ${ibanInfo['holderName']} - ${ibanInfo['iban']}');
+                    }
 
-                      return FutureBuilder<Map<String, int>>(
-                        future: getTeacherStudentCount(teacherId),
-                        builder: (context, countSnapshot) {
-                          if (countSnapshot.connectionState == ConnectionState.waiting) {
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: ListTile(
-                                leading: CircleAvatar(
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            // Teacher info row
+                            Row(
+                              children: [
+                                // Teacher Avatar
+                                CircleAvatar(
+                                  radius: 30,
                                   backgroundColor: Colors.grey[300],
-                                  child: const CircularProgressIndicator(strokeWidth: 2),
+                                  backgroundImage: profileImageUrl.isNotEmpty
+                                      ? NetworkImage(profileImageUrl)
+                                      : null,
+                                  child: profileImageUrl.isEmpty
+                                      ? const Icon(Icons.person, color: Colors.white)
+                                      : null,
                                 ),
-                                title: Text(teacherName),
-                                subtitle: const Text('Loading...'),
-                              ),
-                            );
-                          }
-
-                          final counts = countSnapshot.data ?? {'normal': 0, 'activity': 0};
-                          final normalCount = counts['normal'] ?? 0;
-                          final activityCount = counts['activity'] ?? 0;
-                          final totalCount = normalCount + activityCount;
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              child: Row(
-                                children: [
-                                  // Teacher Avatar
-                                  CircleAvatar(
-                                    radius: 30,
-                                    backgroundColor: Colors.grey[300],
-                                    backgroundImage: profileImageUrl.isNotEmpty
-                                        ? NetworkImage(profileImageUrl)
-                                        : null,
-                                    child: profileImageUrl.isEmpty
-                                        ? const Icon(Icons.person, color: Colors.white)
-                                        : null,
-                                  ),
-                                  
-                                  const SizedBox(width: 16),
-                                  
-                                  // Teacher Info
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          teacherName,
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xff1B1212),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Total Students Today: $totalCount',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  
-                                  // Lesson Counts
-                                  Column(
+                                
+                                const SizedBox(width: 16),
+                                
+                                // Teacher Info
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      Text(
+                                        teacherName,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xff1B1212),
+                                        ),
+                                      ),
+
+                                      Text(
+                                        hasRecentLessons 
+                                            ? 'Total Students Today: $totalCount'
+                                            : 'No Recent Lessons',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: hasRecentLessons ? Colors.grey[600] : Colors.orange[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                
+                                // Lesson Counts
+                                Column(
+                                  children: [
+                                    if (hasRecentLessons) ...[
                                       // Normal Lessons
                                       Container(
                                         padding: const EdgeInsets.symmetric(
@@ -425,50 +624,294 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                                           ),
                                         ),
                                       ),
+                                    ] else ...[
+                                      // No Recent Lessons Badge
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.orange),
+                                        ),
+                                        child: const Text(
+                                          'No Recent Lessons',
+                                          style: TextStyle(
+                                            color: Colors.orange,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
                                     ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                            
+                            // IBAN Information Section
+                            if (ibanInfo != null && ibanInfo['hasIBANInfo'] == true) ...[
+                              const SizedBox(height: 16),
+                              const Divider(),
+                              const SizedBox(height: 8),
+                              
+                              // IBAN Info Header
+                              Row(
+                                children: [
+                                  const Icon(Icons.account_balance, color: Color(0xff1B1212), size: 20),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'IBAN Information',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xff1B1212),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      'Available',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
+                              
+                              const SizedBox(height: 12),
+                              
+                              // IBAN Details
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.green[200]!),
+                                ),
+                                child: Column(
+                                  children: [
+                                    _buildIBANField(
+                                      'Account Holder',
+                                      ibanInfo['holderName'] ?? 'Not provided',
+                                      Icons.person_outline,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _buildIBANField(
+                                      'Phone Number',
+                                      ibanInfo['phoneNumber'] ?? 'Not provided',
+                                      Icons.phone_outlined,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _buildIBANField(
+                                      'IBAN Number',
+                                      ibanInfo['iban'] ?? 'Not provided',
+                                      Icons.account_balance_outlined,
+                                      isIBAN: true,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ] else ...[
+                              const SizedBox(height: 16),
+                              const Divider(),
+                              const SizedBox(height: 8),
+                              
+                              // No IBAN Info
+                              Row(
+                                children: [
+                                  const Icon(Icons.account_balance, color: Colors.orange, size: 20),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'IBAN Information',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xff1B1212),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      'Not Set',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              
+                              const SizedBox(height: 12),
+                              
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.orange[200]!),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.info_outline, color: Colors.orange[600], size: 20),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        'Teacher has not provided IBAN information yet',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.orange,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         );
       },
     );
   }
 
+  Widget _buildIBANField(String label, String value, IconData icon, {bool isIBAN = false}) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.green[700]),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.green[800],
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 3,
+          child: GestureDetector(
+            onTap: () => _copyToClipboard(value, label),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    isIBAN ? _formatIBAN(value) : value,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black87,
+                      fontFamily: isIBAN ? 'monospace' : null,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.copy,
+                  size: 14,
+                  color: Colors.green[600],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatIBAN(String iban) {
+    if (iban.length != 24) return iban;
+    
+    // Format as TR XX XXXX XXXX XXXX XXXX XXXX XX
+    return 'TR ${iban.substring(0, 2)} ${iban.substring(2, 6)} ${iban.substring(6, 10)} ${iban.substring(10, 14)} ${iban.substring(14, 18)} ${iban.substring(18, 22)} ${iban.substring(22, 24)}';
+  }
+
+  // Copy text to clipboard
+  Future<void> _copyToClipboard(String text, String fieldName) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$fieldName copied to clipboard'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   Widget _buildAnalytics() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('takenLessons')
-          .where('dateTime', isGreaterThanOrEqualTo: Timestamp.fromDate(getTodayRange()['start']!))
-          .where('dateTime', isLessThanOrEqualTo: Timestamp.fromDate(getTodayRange()['end']!))
-          .snapshots(),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: getTeachersWithLessonData(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final lessons = snapshot.data?.docs ?? [];
-        int totalStudents = lessons.length;
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final teachersWithLessons = snapshot.data ?? [];
+        
+        // Calculate totals
+        int totalStudents = 0;
         int normalLessons = 0;
         int activityLessons = 0;
-
-        for (var lesson in lessons) {
-          final data = lesson.data() as Map<String, dynamic>;
-          final lessonType = data['lessonType'] ?? 'normal';
+        int teachersWithIBAN = 0;
+        int activeTeachers = 0;
+        for (var teacher in teachersWithLessons) {
+          totalStudents += teacher['totalCount'] as int;
+          normalLessons += teacher['normalCount'] as int;
+          activityLessons += teacher['activityCount'] as int;
           
-          if (lessonType == 'activity') {
-            activityLessons++;
-          } else {
-            normalLessons++;
+          final ibanInfo = teacher['ibanInfo'] as Map<String, dynamic>?;
+          if (ibanInfo != null && ibanInfo['hasIBANInfo'] == true) {
+            teachersWithIBAN++;
+          }
+          
+          final hasRecentLessons = teacher['hasRecentLessons'] as bool;
+          if (hasRecentLessons) {
+            activeTeachers++;
           }
         }
 
@@ -490,8 +933,8 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                 children: [
                   Expanded(
                     child: _buildAnalyticsCard(
-                      'Total Students',
-                      totalStudents.toString(),
+                      'Total Teachers',
+                      teachersWithLessons.length.toString(),
                       Colors.purple,
                       Icons.people,
                     ),
@@ -499,10 +942,45 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                   const SizedBox(width: 16),
                   Expanded(
                     child: _buildAnalyticsCard(
+                      'Active Teachers',
+                      activeTeachers.toString(),
+                      Colors.blue,
+                      Icons.person,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildAnalyticsCard(
+                      'With IBAN Info',
+                      teachersWithIBAN.toString(),
+                      Colors.teal,
+                      Icons.account_balance,
+                    ),
+                  ),
+                ],
+              ),
+              
+
+              
+              const SizedBox(height: 32),
+              
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildAnalyticsCard(
+                      'Total Students',
+                      totalStudents.toString(),
+                      Colors.indigo,
+                      Icons.school,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildAnalyticsCard(
                       'Normal Lessons',
                       normalLessons.toString(),
-                      Colors.blue,
-                      Icons.school,
+                      Colors.green,
+                      Icons.sports,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -510,11 +988,24 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                     child: _buildAnalyticsCard(
                       'Activity Lessons',
                       activityLessons.toString(),
-                      Colors.green,
-                      Icons.sports,
+                      Colors.red,
+                      Icons.warning,
                     ),
                   ),
                 ],
+              ),
+              
+              const SizedBox(height: 32),
+              
+              // Refresh button
+              ElevatedButton(
+                onPressed: () => setState(() {}),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xff1B1212),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                ),
+                child: const Text('Refresh Data'),
               ),
             ],
           ),
