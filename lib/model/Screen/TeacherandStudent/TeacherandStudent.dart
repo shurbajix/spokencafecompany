@@ -15,11 +15,15 @@ class _TeacherandStudentState extends State<TeacherandStudent>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String _searchQuery = '';
+  List<Map<String, dynamic>> _allTeachersData = [];
+  bool _isLoading = true;
   
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _loadTeachersData();
   }
 
   @override
@@ -199,6 +203,42 @@ class _TeacherandStudentState extends State<TeacherandStudent>
     }
   }
 
+  // Load teachers data once
+  Future<void> _loadTeachersData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      final data = await getTeachersWithLessonData();
+      setState(() {
+        _allTeachersData = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      print('Error loading teachers data: $e');
+    }
+  }
+
+  // Filter teachers based on search query
+  List<Map<String, dynamic>> _filterTeachers(List<Map<String, dynamic>> teachers) {
+    if (_searchQuery.isEmpty) {
+      return teachers;
+    }
+    
+    return teachers.where((teacher) {
+      final teacherData = teacher['teacherData'] as Map<String, dynamic>;
+      final teacherName = '${teacherData['name'] ?? ''} ${teacherData['surname'] ?? ''}'.toLowerCase();
+      final teacherEmail = teacherData['email']?.toString().toLowerCase() ?? '';
+      final query = _searchQuery.toLowerCase();
+      
+      return teacherName.contains(query) || teacherEmail.contains(query);
+    }).toList();
+  }
+
   // Get all teachers with their lesson data and IBAN information - ENHANCED VERSION
   Future<List<Map<String, dynamic>>> getTeachersWithLessonData() async {
     try {
@@ -329,473 +369,481 @@ class _TeacherandStudentState extends State<TeacherandStudent>
   }
 
   Widget _buildTeacherDashboard() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: getTeachersWithLessonData(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(
-              color: Color(0xff1B1212),
-              backgroundColor: Colors.white,
-            ),
-          );
-        }
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xff1B1212),
+          backgroundColor: Colors.white,
+        ),
+      );
+    }
 
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Error: ${snapshot.error}'),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => setState(() {}),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          );
-        }
+    final teachersWithLessons = _filterTeachers(_allTeachersData);
 
-        final teachersWithLessons = snapshot.data ?? [];
-
-        if (teachersWithLessons.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.schedule,
-                  size: 64,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'No Active Teachers',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Teachers will appear here when students take lessons with them',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Auto-refresh every 24 hours',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () => setState(() {}),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xff1B1212),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Refresh'),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Column(
+    if (teachersWithLessons.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Header with today's date and active count
-            Container(
+            Icon(
+              _searchQuery.isEmpty ? Icons.schedule : Icons.search_off,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _searchQuery.isEmpty ? 'No Active Teachers' : 'No Teachers Found',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _searchQuery.isEmpty 
+                  ? 'Teachers will appear here when students take lessons with them'
+                  : 'No teachers match your search: "$_searchQuery"',
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Auto-refresh every 24 hours',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _loadTeachersData,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xff1B1212),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Refresh'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Header with today's date and active count
+        Container(
+          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Color(0xff1B1212),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.calendar_today, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Today\'s Lessons - ${DateFormat('yyyy/MM/dd').format(DateTime.now())}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.people, color: Colors.white70, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    _searchQuery.isEmpty 
+                        ? 'All Approved Teachers: ${_allTeachersData.length}'
+                        : 'Filtered Teachers: ${teachersWithLessons.length} of ${_allTeachersData.length}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        
+        // Search Bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: TextField(
+            decoration: InputDecoration(
+              hintText: 'Search teachers by name or email...',
+              prefixIcon: const Icon(Icons.search, color: Color(0xff1B1212)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xff1B1212)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xff1B1212), width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              filled: true,
+              fillColor: Colors.grey[50],
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
+          ),
+        ),
+        
+        // Legend
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Normal Lessons (Max: 8)'),
+                ],
+              ),
+              Row(
+                children: [
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Activity Lessons (Max: 20)'),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // Teachers list
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadTeachersData,
+            child: ListView.builder(
               padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Color(0xff1B1212),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.calendar_today, color: Colors.white),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Today\'s Lessons - ${DateFormat('yyyy/MM/dd').format(DateTime.now())}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.people, color: Colors.white70, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        'All Approved Teachers: ${teachersWithLessons.length}',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            
-            // Legend
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 16,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('Normal Lessons (Max: 8)'),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 16,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('Activity Lessons (Max: 20)'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+              itemCount: teachersWithLessons.length,
+              itemBuilder: (context, index) {
+                final teacherInfo = teachersWithLessons[index];
+                final teacherData = teacherInfo['teacherData'] as Map<String, dynamic>;
+                final teacherId = teacherInfo['teacherId'] as String;
+                final teacherName = teacherData['name'] ?? 'Unknown Teacher';
+                final profileImageUrl = teacherData['profileImageUrl'] ?? '';
+                final normalCount = teacherInfo['normalCount'] as int;
+                final activityCount = teacherInfo['activityCount'] as int;
+                final totalCount = teacherInfo['totalCount'] as int;
+                final ibanInfo = teacherInfo['ibanInfo'] as Map<String, dynamic>?;
+                final hasRecentLessons = teacherInfo['hasRecentLessons'] as bool;
 
-            // Teachers list
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async {
-                  setState(() {});
-                },
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: teachersWithLessons.length,
-                  itemBuilder: (context, index) {
-                    final teacherInfo = teachersWithLessons[index];
-                    final teacherData = teacherInfo['teacherData'] as Map<String, dynamic>;
-                    final teacherId = teacherInfo['teacherId'] as String;
-                    final teacherName = teacherData['name'] ?? 'Unknown Teacher';
-                    final profileImageUrl = teacherData['profileImageUrl'] ?? '';
-                    final normalCount = teacherInfo['normalCount'] as int;
-                    final activityCount = teacherInfo['activityCount'] as int;
-                    final totalCount = teacherInfo['totalCount'] as int;
-                    final ibanInfo = teacherInfo['ibanInfo'] as Map<String, dynamic>?;
-                    final hasRecentLessons = teacherInfo['hasRecentLessons'] as bool;
+                // Debug logging for UI
+                print('DEBUG: 🎨 Building UI for teacher: $teacherName');
+                print('DEBUG: 🎨 IBAN info for UI: ${ibanInfo != null ? 'Available' : 'Not available'}');
+                print('DEBUG: 🎨 Has recent lessons: $hasRecentLessons');
+                if (ibanInfo != null) {
+                  print('DEBUG: 🎨 IBAN details: ${ibanInfo['holderName']} - ${ibanInfo['iban']}');
+                }
 
-                    // Debug logging for UI
-                    print('DEBUG: 🎨 Building UI for teacher: $teacherName');
-                    print('DEBUG: 🎨 IBAN info for UI: ${ibanInfo != null ? 'Available' : 'Not available'}');
-                    print('DEBUG: 🎨 Has recent lessons: $hasRecentLessons');
-                    if (ibanInfo != null) {
-                      print('DEBUG: 🎨 IBAN details: ${ibanInfo['holderName']} - ${ibanInfo['iban']}');
-                    }
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        // Teacher info row
+                        Row(
                           children: [
-                            // Teacher info row
-                            Row(
-                              children: [
-                                // Teacher Avatar
-                                CircleAvatar(
-                                  radius: 30,
-                                  backgroundColor: Colors.grey[300],
-                                  backgroundImage: profileImageUrl.isNotEmpty
-                                      ? NetworkImage(profileImageUrl)
-                                      : null,
-                                  child: profileImageUrl.isEmpty
-                                      ? const Icon(Icons.person, color: Colors.white)
-                                      : null,
-                                ),
-                                
-                                const SizedBox(width: 16),
-                                
-                                // Teacher Info
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        teacherName,
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xff1B1212),
-                                        ),
-                                      ),
-
-                                      Text(
-                                        hasRecentLessons 
-                                            ? 'Total Students Today: $totalCount'
-                                            : 'No Recent Lessons',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: hasRecentLessons ? Colors.grey[600] : Colors.orange[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                
-                                // Lesson Counts
-                                Column(
-                                  children: [
-                                    if (hasRecentLessons) ...[
-                                      // Normal Lessons
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blue.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.blue),
-                                        ),
-                                        child: Text(
-                                          'Normal: $normalCount/8',
-                                          style: const TextStyle(
-                                            color: Colors.blue,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                      
-                                      const SizedBox(height: 8),
-                                      
-                                      // Activity Lessons
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.green),
-                                        ),
-                                        child: Text(
-                                          'Activity: $activityCount/20',
-                                          style: const TextStyle(
-                                            color: Colors.green,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                    ] else ...[
-                                      // No Recent Lessons Badge
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.orange),
-                                        ),
-                                        child: const Text(
-                                          'No Recent Lessons',
-                                          style: TextStyle(
-                                            color: Colors.orange,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
+                            // Teacher Avatar
+                            CircleAvatar(
+                              radius: 30,
+                              backgroundColor: Colors.grey[300],
+                              backgroundImage: profileImageUrl.isNotEmpty
+                                  ? NetworkImage(profileImageUrl)
+                                  : null,
+                              child: profileImageUrl.isEmpty
+                                  ? const Icon(Icons.person, color: Colors.white)
+                                  : null,
                             ),
                             
-                            // IBAN Information Section
-                            if (ibanInfo != null && ibanInfo['hasIBANInfo'] == true) ...[
-                              const SizedBox(height: 16),
-                              const Divider(),
-                              const SizedBox(height: 8),
-                              
-                              // IBAN Info Header
-                              Row(
+                            const SizedBox(width: 16),
+                            
+                            // Teacher Info
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.account_balance, color: Color(0xff1B1212), size: 20),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'IBAN Information',
-                                    style: TextStyle(
-                                      fontSize: 16,
+                                  Text(
+                                    teacherName,
+                                    style: const TextStyle(
+                                      fontSize: 18,
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xff1B1212),
                                     ),
                                   ),
-                                  const Spacer(),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Text(
-                                      'Available',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              
-                              const SizedBox(height: 12),
-                              
-                              // IBAN Details
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.green[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.green[200]!),
-                                ),
-                                child: Column(
-                                  children: [
-                                    _buildIBANField(
-                                      'Account Holder',
-                                      ibanInfo['holderName'] ?? 'Not provided',
-                                      Icons.person_outline,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _buildIBANField(
-                                      'Phone Number',
-                                      ibanInfo['phoneNumber'] ?? 'Not provided',
-                                      Icons.phone_outlined,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _buildIBANField(
-                                      'IBAN Number',
-                                      ibanInfo['iban'] ?? 'Not provided',
-                                      Icons.account_balance_outlined,
-                                      isIBAN: true,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ] else ...[
-                              const SizedBox(height: 16),
-                              const Divider(),
-                              const SizedBox(height: 8),
-                              
-                              // No IBAN Info
-                              Row(
-                                children: [
-                                  const Icon(Icons.account_balance, color: Colors.orange, size: 20),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'IBAN Information',
+
+                                  Text(
+                                    hasRecentLessons 
+                                        ? 'Total Students Today: $totalCount'
+                                        : 'No Recent Lessons',
                                     style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xff1B1212),
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Text(
-                                      'Not Set',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                      fontSize: 14,
+                                      color: hasRecentLessons ? Colors.grey[600] : Colors.orange[600],
                                     ),
                                   ),
                                 ],
                               ),
-                              
-                              const SizedBox(height: 12),
-                              
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.orange[200]!),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline, color: Colors.orange[600], size: 20),
-                                    const SizedBox(width: 8),
-                                    const Expanded(
-                                      child: Text(
-                                        'Teacher has not provided IBAN information yet',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.orange,
-                                        ),
+                            ),
+                            
+                            // Lesson Counts
+                            Column(
+                              children: [
+                                if (hasRecentLessons) ...[
+                                  // Normal Lessons
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.blue),
+                                    ),
+                                    child: Text(
+                                      'Normal: $normalCount/8',
+                                      style: const TextStyle(
+                                        color: Colors.blue,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
                                       ),
                                     ),
-                                  ],
+                                  ),
+                                  
+                                  const SizedBox(height: 8),
+                                  
+                                  // Activity Lessons
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.green),
+                                    ),
+                                    child: Text(
+                                      'Activity: $activityCount/20',
+                                      style: const TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  // No Recent Lessons Badge
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.orange),
+                                    ),
+                                    child: const Text(
+                                      'No Recent Lessons',
+                                      style: TextStyle(
+                                        color: Colors.orange,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                        
+                        // IBAN Information Section
+                        if (ibanInfo != null && ibanInfo['hasIBANInfo'] == true) ...[
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 8),
+                          
+                          // IBAN Info Header
+                          Row(
+                            children: [
+                              const Icon(Icons.account_balance, color: Color(0xff1B1212), size: 20),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'IBAN Information',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.green,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'Available',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ],
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+                          ),
+                          
+                          const SizedBox(height: 12),
+                          
+                          // IBAN Details
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.green[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green[200]!),
+                            ),
+                            child: Column(
+                              children: [
+                                _buildIBANField(
+                                  'Account Holder',
+                                  ibanInfo['holderName'] ?? 'Not provided',
+                                  Icons.person_outline,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildIBANField(
+                                  'Phone Number',
+                                  ibanInfo['phoneNumber'] ?? 'Not provided',
+                                  Icons.phone_outlined,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildIBANField(
+                                  'IBAN Number',
+                                  ibanInfo['iban'] ?? 'Not provided',
+                                  Icons.account_balance_outlined,
+                                  isIBAN: true,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 8),
+                          
+                          // No IBAN Info
+                          Row(
+                            children: [
+                              const Icon(Icons.account_balance, color: Colors.orange, size: 20),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'IBAN Information',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'Not Set',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          const SizedBox(height: 12),
+                          
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange[200]!),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, color: Colors.orange[600], size: 20),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'Teacher has not provided IBAN information yet',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.orange,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
   }
 
@@ -868,30 +916,11 @@ class _TeacherandStudentState extends State<TeacherandStudent>
   }
 
   Widget _buildAnalytics() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: getTeachersWithLessonData(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Error: ${snapshot.error}'),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => setState(() {}),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final teachersWithLessons = snapshot.data ?? [];
+    final teachersWithLessons = _allTeachersData;
         
         // Calculate totals
         int totalStudents = 0;
@@ -999,7 +1028,7 @@ class _TeacherandStudentState extends State<TeacherandStudent>
               
               // Refresh button
               ElevatedButton(
-                onPressed: () => setState(() {}),
+                onPressed: _loadTeachersData,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xff1B1212),
                   foregroundColor: Colors.white,
@@ -1010,8 +1039,6 @@ class _TeacherandStudentState extends State<TeacherandStudent>
             ],
           ),
         );
-      },
-    );
   }
 
   Widget _buildAnalyticsCard(String title, String value, Color color, IconData icon) {

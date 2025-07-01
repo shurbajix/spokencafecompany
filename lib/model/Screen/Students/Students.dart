@@ -223,23 +223,37 @@ class _StudentsState extends State<Students> {
   // Implementation methods for the three delete actions
   Future<void> _sendWarningMessage(Student student, String message) async {
     try {
-      // Create a chat message in the control app's chat system
-      await FirebaseFirestore.instance.collection('control_messages').add({
-        'recipientId': student.docId,
-        'recipientName': student.name,
-        'recipientEmail': student.email,
-        'message': message,
+      // Send message directly to the user's chat collection that Chat.dart reads from
+      // Determine the correct collection based on user role
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(student.docId)
+          .get();
+      
+      final userData = userDoc.data() as Map<String, dynamic>? ?? {};
+      final userRole = userData['role'] ?? 'student';
+      
+      // Use the correct collection based on user role
+      final collectionName = userRole == 'teacher' ? 'teacherChats' : 'studentChats';
+      
+      await FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc(student.docId)
+          .collection('messages')
+          .add({
+        'userId': 'admin', // Admin is sending the message
+        'content': '⚠️ WARNING: $message', // Add warning emoji for visibility
         'timestamp': FieldValue.serverTimestamp(),
-        'type': 'warning',
-        'isRead': false,
-        'sentBy': 'Control App',
+        'userType': 'admin',
+        'messageType': 'warning', // Mark as warning message
+        'isWarning': true, // Additional flag for warning messages
       });
 
       // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Warning message sent to ${student.name}'),
+            content: Text('Warning message sent to ${student.name}\'s chat'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -248,7 +262,7 @@ class _StudentsState extends State<Students> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error sending warning: $e'),
+            content: Text('Failed to send warning: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -258,7 +272,7 @@ class _StudentsState extends State<Students> {
 
   Future<void> _restrictUser(Student student) async {
     try {
-      // Add user to restricted users collection
+      // Add user to restricted users collection with enhanced restrictions
       await FirebaseFirestore.instance.collection('restricted_users').doc(student.docId).set({
         'userId': student.docId,
         'userName': student.name,
@@ -268,15 +282,19 @@ class _StudentsState extends State<Students> {
           'canPost': false,
           'canComment': false,
           'canTakeLessons': false,
+          'canAccessNotifications': false,
+          'canCreateLessons': false,
         },
         'restrictedBy': 'Control App',
+        'isRestricted': true,
+        'restrictionReason': 'Account restricted by admin',
       });
 
       // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${student.name} has been restricted'),
+            content: Text('${student.name} has been restricted - Floating action button, commenting, and lesson-taking disabled'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1825,6 +1843,7 @@ class _StudentsState extends State<Students> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+           backgroundColor: Colors.white,
           title: const Text('Delete from User Account'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1864,6 +1883,7 @@ class _StudentsState extends State<Students> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+           backgroundColor: Colors.white,
           title: const Text('Delete from Control Only'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1905,6 +1925,7 @@ class _StudentsState extends State<Students> {
         context: context,
         barrierDismissible: false,
         builder: (context) => const AlertDialog(
+           backgroundColor: Colors.white,
           content: Row(
             children: [
               CircularProgressIndicator(),
@@ -2004,6 +2025,7 @@ class _StudentsState extends State<Students> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+           backgroundColor: Colors.white,
           title: const Text('Offer Support'),
           content: Text(
             'Post deleted successfully. Would you like to chat with ${post['userName']} to offer support or explanation?'

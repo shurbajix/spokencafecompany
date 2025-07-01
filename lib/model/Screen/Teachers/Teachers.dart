@@ -2004,6 +2004,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+         backgroundColor: Colors.white,
         title: const Text(
           'Delete from User Account',
           style: TextStyle(color: Colors.orange),
@@ -2054,6 +2055,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+         backgroundColor: Colors.white,
         title: const Text(
           'Delete from Control App',
           style: TextStyle(color: Colors.red),
@@ -2101,6 +2103,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+         backgroundColor: Colors.white,
         title: const Text('Offer Help'),
         content: Text(
           'Post deleted from $userName\'s account.\n\nWould you like to chat with $userName to offer help or support?',

@@ -32,13 +32,12 @@ class _StudentInfoState extends State<StudentInfo> {
 
       print('🔄 Fetching students info with billing data...');
 
-      // Get all users with student role
+      // Get all users (not just students) to show billing info for everyone
       final usersSnapshot = await FirebaseFirestore.instance
           .collection('users')
-          .where('role', isEqualTo: 'student')
           .get();
 
-      print('📊 Found ${usersSnapshot.docs.length} students');
+      print('📊 Found ${usersSnapshot.docs.length} total users');
 
       // Debug: Also check all users to see if billing data might be for non-students
       final allUsersSnapshot = await FirebaseFirestore.instance
@@ -51,38 +50,46 @@ class _StudentInfoState extends State<StudentInfo> {
         print('👥 User: ${doc.id} - role=${data['role']} - name=${data['name']}');
       }
 
-      // Get all saved cards with billing information
-      final savedCardsSnapshot = await FirebaseFirestore.instance
-          .collection('saved_cards')
+      // Get all billing information from billing_info collection
+      final billingInfoSnapshot = await FirebaseFirestore.instance
+          .collection('billing_info')
           .get();
 
-      print('💳 Found ${savedCardsSnapshot.docs.length} saved cards with potential billing info');
-
-      // Debug: Show all saved cards data
-      for (int i = 0; i < savedCardsSnapshot.docs.length; i++) {
-        final cardData = savedCardsSnapshot.docs[i].data();
-        print('💳 Card $i: userId=${cardData['userId']}, billingName=${cardData['billingFullName']}, billingEmail=${cardData['billingEmail']}');
-        print('💳 Full card data: $cardData');
+      print('💳 Found ${billingInfoSnapshot.docs.length} billing records');
+      
+      // Debug: Check if billing_info collection exists and has data
+      if (billingInfoSnapshot.docs.isEmpty) {
+        print('⚠️ WARNING: billing_info collection is EMPTY!');
+        print('⚠️ This means no billing data has been saved yet.');
+        print('⚠️ Check if PaymentFormView.dart is saving to the correct collection.');
       }
 
-      // Create a map of userId to student data
-      final Map<String, Map<String, dynamic>> studentUsers = {};
+      // Debug: Show all billing data
+      for (int i = 0; i < billingInfoSnapshot.docs.length; i++) {
+        final billingData = billingInfoSnapshot.docs[i].data();
+        print('💳 Billing $i: userId=${billingData['userId']}, billingName=${billingData['billingFullName']}, billingEmail=${billingData['billingEmail']}');
+        print('💳 Full billing data: $billingData');
+      }
+
+      // Create a map of userId to user data (all users, not just students)
+      final Map<String, Map<String, dynamic>> allUserData = {};
       for (var doc in usersSnapshot.docs) {
         final data = doc.data();
-        studentUsers[doc.id] = {
+        allUserData[doc.id] = {
           'userId': doc.id,
           'name': data['name'] ?? 'Unknown',
           'surname': data['surname'] ?? '',
           'email': data['email'] ?? 'No email',
           'phoneNumber': data['phoneNumber'] ?? 'No phone',
           'profileImageUrl': data['profileImageUrl'] ?? '',
+          'role': data['role'] ?? 'unknown',
           'createdAt': data['createdAt'],
         };
-        print('👤 Student: ${doc.id} - ${data['name']} ${data['surname']}');
+        print('👤 User: ${doc.id} - ${data['name']} ${data['surname']} (role: ${data['role']})');
       }
 
-      // Debug: Show all student IDs
-      print('👥 All student IDs: ${studentUsers.keys.toList()}');
+      // Debug: Show all user IDs
+      print('👥 All user IDs: ${allUserData.keys.toList()}');
 
       // Create a map of ALL users for billing matching (including non-students)
       final Map<String, Map<String, dynamic>> allUsers = {};
@@ -106,18 +113,28 @@ class _StudentInfoState extends State<StudentInfo> {
       // Create a map to track which students have billing info
       final Map<String, List<Map<String, dynamic>>> studentBillingData = {};
       
-      for (var cardDoc in savedCardsSnapshot.docs) {
-        final cardData = cardDoc.data();
-        final userId = cardData['userId'];
+      for (var billingDoc in billingInfoSnapshot.docs) {
+        final billingData = billingDoc.data();
+        final userId = billingData['userId'];
         
-        print('🔍 Processing card for userId: $userId');
-        print('🔍 Card data: billingFullName=${cardData['billingFullName']}, billingEmail=${cardData['billingEmail']}');
+        print('🔍 Processing billing for userId: $userId');
+        print('🔍 Billing data: billingFullName=${billingData['billingFullName']}, billingEmail=${billingData['billingEmail']}, billingIdNumber=${billingData['billingIdNumber']}');
+        print('🔍 Billing data keys: ${billingData.keys.toList()}');
+        print('🔍 Full billing document: $billingData');
         
-        // Check if this card has billing information
+        // Debug: Check if this userId exists in our users list
+        if (allUsers.containsKey(userId)) {
+          final userData = allUsers[userId]!;
+          print('✅ User found: ${userData['name']} ${userData['surname']} (${userData['email']})');
+        } else {
+          print('❌ User NOT found in users collection: $userId');
+        }
+        
+        // Check if this billing record has billing information
         if (userId != null && 
             allUsers.containsKey(userId) &&
-            (cardData['billingFullName'] != null || 
-             cardData['billingEmail'] != null)) {
+            (billingData['billingFullName'] != null || 
+             billingData['billingEmail'] != null)) {
           
           print('✅ Found billing info for user: $userId');
           
@@ -126,57 +143,44 @@ class _StudentInfoState extends State<StudentInfo> {
           }
           
           studentBillingData[userId]!.add({
-            'cardId': cardDoc.id,
-            'billingFullName': cardData['billingFullName'] ?? '',
-            'billingEmail': cardData['billingEmail'] ?? '',
-            'billingIdNumberHash': cardData['billingIdNumberHash'] ?? '',
-            'maskedNumber': cardData['maskedNumber'] ?? 'Card ****',
-            'cardType': cardData['cardType'] ?? 'Unknown',
-            'createdAt': cardData['createdAt'],
+            'billingId': billingDoc.id,
+            'billingFullName': billingData['billingFullName'] ?? '',
+            'billingEmail': billingData['billingEmail'] ?? '',
+            'billingIdNumber': billingData['billingIdNumber'] ?? '', // Original ID number
+            'billingIdNumberHash': billingData['billingIdNumberHash'] ?? '', // Keep hash for reference
+            'orderId': billingData['orderId'] ?? '',
+            'amount': billingData['amount'] ?? 0.0,
+            'paymentDate': billingData['paymentDate'],
+            'createdAt': billingData['createdAt'],
           });
         } else {
           print('❌ No billing info or user not found for userId: $userId');
           print('❌ userId != null: ${userId != null}');
           print('❌ allUsers.containsKey(userId): ${allUsers.containsKey(userId)}');
-          print('❌ has billingFullName: ${cardData['billingFullName'] != null}');
-          print('❌ has billingEmail: ${cardData['billingEmail'] != null}');
+          print('❌ has billingFullName: ${billingData['billingFullName'] != null}');
+          print('❌ has billingEmail: ${billingData['billingEmail'] != null}');
+          print('❌ billingFullName value: "${billingData['billingFullName']}"');
+          print('❌ billingEmail value: "${billingData['billingEmail']}"');
         }
       }
 
-      print('💰 Students with billing data: ${studentBillingData.keys.length}');
+      print('💰 Users with billing data: ${studentBillingData.keys.length}');
       for (var userId in studentBillingData.keys) {
-        print('💰 Student $userId has ${studentBillingData[userId]!.length} billing entries');
+        print('💰 User $userId has ${studentBillingData[userId]!.length} billing entries');
       }
 
-      // Add all students, but prioritize those with billing information
-      for (var userId in studentUsers.keys) {
-        final studentData = studentUsers[userId]!;
+      // Add all users, but prioritize those with billing information
+      for (var userId in allUserData.keys) {
+        final userData = allUserData[userId]!;
         final billingInfo = studentBillingData[userId] ?? [];
         
         combinedData.add({
-          ...studentData,
+          ...userData,
           'billingInfo': billingInfo,
           'hasBillingInfo': billingInfo.isNotEmpty,
         });
         
-        print('📋 Added student: ${studentData['name']} - hasBillingInfo: ${billingInfo.isNotEmpty}');
-      }
-
-      // Also add non-students who have billing info (for debugging)
-      for (var userId in allUsers.keys) {
-        if (!studentUsers.containsKey(userId) && studentBillingData.containsKey(userId)) {
-          final userData = allUsers[userId]!;
-          final billingInfo = studentBillingData[userId]!;
-          
-          combinedData.add({
-            ...userData,
-            'billingInfo': billingInfo,
-            'hasBillingInfo': true,
-            'isNonStudent': true, // Flag to identify non-students
-          });
-          
-          print('📋 Added non-student with billing: ${userData['name']} (role: ${userData['role']}) - hasBillingInfo: true');
-        }
+        print('📋 Added user: ${userData['name']} (role: ${userData['role']}) - hasBillingInfo: ${billingInfo.isNotEmpty}');
       }
 
       // Sort: students with billing info first, then by name
@@ -194,8 +198,8 @@ class _StudentInfoState extends State<StudentInfo> {
         isLoading = false;
       });
 
-      print('✅ Successfully fetched ${studentsInfo.length} students');
-      print('💰 Students with billing info: ${combinedData.where((s) => s['hasBillingInfo']).length}');
+      print('✅ Successfully fetched ${studentsInfo.length} users');
+      print('💰 Users with billing info: ${combinedData.where((s) => s['hasBillingInfo']).length}');
 
     } catch (e) {
       print('❌ Error fetching students info: $e');
@@ -259,7 +263,7 @@ class _StudentInfoState extends State<StudentInfo> {
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text(
-          '👥 STUDENT INFO - BILLING INFORMATION',
+          '👥 USER INFO - BILLING RECORDS',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
@@ -271,7 +275,199 @@ class _StudentInfoState extends State<StudentInfo> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _fetchStudentsInfo,
+            onPressed: () {
+              print('🔄 Manual refresh triggered');
+              _fetchStudentsInfo();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.bug_report, color: Colors.white),
+            onPressed: () async {
+              print('🔍 DEBUG: Comprehensive billing_info collection check...');
+              try {
+                final billingSnapshot = await FirebaseFirestore.instance
+                    .collection('billing_info')
+                    .get();
+                
+                print('🔍 DEBUG: Found ${billingSnapshot.docs.length} billing records');
+                
+                if (billingSnapshot.docs.isEmpty) {
+                  print('🔍 DEBUG: No billing records found!');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('No billing records found in Firebase'),
+                      backgroundColor: Colors.orange,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                  return;
+                }
+                
+                // Show detailed info for each billing record
+                for (int i = 0; i < billingSnapshot.docs.length; i++) {
+                  final data = billingSnapshot.docs[i].data();
+                  print('🔍 DEBUG: Billing Record $i:');
+                  print('  - Document ID: ${billingSnapshot.docs[i].id}');
+                  print('  - userId: ${data['userId']}');
+                  print('  - billingFullName: ${data['billingFullName']}');
+                  print('  - billingEmail: ${data['billingEmail']}');
+                  print('  - billingIdNumber: ${data['billingIdNumber']}');
+                  print('  - billingIdNumberHash: ${data['billingIdNumberHash']}');
+                  print('  - orderId: ${data['orderId']}');
+                  print('  - amount: ${data['amount']}');
+                  print('  - paymentDate: ${data['paymentDate']}');
+                  print('  - createdAt: ${data['createdAt']}');
+                  print('  - Full data: $data');
+                  print('  ---');
+                }
+                
+                // Also check if users exist for these billing records
+                print('🔍 DEBUG: Checking if users exist for billing records...');
+                for (var doc in billingSnapshot.docs) {
+                  final data = doc.data();
+                  final userId = data['userId'];
+                  if (userId != null) {
+                    try {
+                      final userDoc = await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(userId)
+                          .get();
+                      
+                      if (userDoc.exists) {
+                        final userData = userDoc.data();
+                        print('✅ User exists: ${userData?['name']} ${userData?['surname']} (${userData?['email']})');
+                      } else {
+                        print('❌ User NOT found: $userId');
+                      }
+                    } catch (e) {
+                      print('❌ Error checking user $userId: $e');
+                    }
+                  }
+                }
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Found ${billingSnapshot.docs.length} billing records - check console for details'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              } catch (e) {
+                print('🔍 DEBUG: Error checking billing_info: $e');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              }
+            },
+            tooltip: 'Debug Billing Info',
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, color: Colors.white),
+            onPressed: () async {
+              print('🧪 Adding test billing record with original ID number...');
+              try {
+                final testBillingData = {
+                  'userId': 'test_user_${DateTime.now().millisecondsSinceEpoch}',
+                  'billingFullName': 'Test User Full Name',
+                  'billingEmail': 'test@example.com',
+                  'billingIdNumber': '99087867868788', // Original ID number (this should display)
+                  'billingIdNumberHash': 'ff07139c28704ee6812922e2ebc2dd055ab3907c21bf42181595d28e7c151f7d', // Hashed version
+                  'orderId': 'test_order_${DateTime.now().millisecondsSinceEpoch}',
+                  'amount': 190.00,
+                  'paymentDate': FieldValue.serverTimestamp(),
+                  'createdAt': FieldValue.serverTimestamp(),
+                  'updatedAt': FieldValue.serverTimestamp(),
+                };
+                
+                final docRef = await FirebaseFirestore.instance
+                    .collection('billing_info')
+                    .add(testBillingData);
+                
+                print('✅ Test billing record added with ID: ${docRef.id}');
+                print('✅ Original ID: 99087867868788');
+                print('✅ Hashed ID: ff07139c28704ee6812922e2ebc2dd055ab3907c21bf42181595d28e7c151f7d');
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Test billing record added! Refresh to see it.'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+                
+                // Refresh the data
+                _fetchStudentsInfo();
+                
+              } catch (e) {
+                print('❌ Error adding test billing record: $e');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              }
+            },
+            tooltip: 'Add Test Billing Record',
+          ),
+          IconButton(
+            icon: const Icon(Icons.build, color: Colors.white),
+            onPressed: () async {
+              print('🔧 Fixing old billing records...');
+              try {
+                final billingSnapshot = await FirebaseFirestore.instance
+                    .collection('billing_info')
+                    .get();
+                
+                int fixedCount = 0;
+                for (var doc in billingSnapshot.docs) {
+                  final data = doc.data();
+                  final currentIdNumber = data['billingIdNumber']?.toString() ?? '';
+                  
+                  // Check if this is an old record with hash in billingIdNumber
+                  if (currentIdNumber.length > 20 && RegExp(r'^[a-f0-9]+$').hasMatch(currentIdNumber)) {
+                    print('🔧 Fixing record ${doc.id}: $currentIdNumber');
+                    
+                    // For demo purposes, replace with a sample ID number
+                    // In real app, you'd need to get the original ID from somewhere
+                    await doc.reference.update({
+                      'billingIdNumber': '99087867868788', // Replace with actual original ID
+                      'updatedAt': FieldValue.serverTimestamp(),
+                    });
+                    
+                    fixedCount++;
+                  }
+                }
+                
+                print('✅ Fixed $fixedCount billing records');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Fixed $fixedCount billing records!'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+                
+                // Refresh the data
+                _fetchStudentsInfo();
+                
+              } catch (e) {
+                print('❌ Error fixing billing records: $e');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              }
+            },
+            tooltip: 'Fix Old Billing Records',
           ),
         ],
       ),
@@ -283,7 +479,7 @@ class _StudentInfoState extends State<StudentInfo> {
             color: Colors.white,
             child: TextField(
               decoration: InputDecoration(
-                hintText: 'Search by student name, email, phone, or billing information...',
+                hintText: 'Search by user name, email, phone, or billing information...',
                 prefixIcon: const Icon(Icons.search, color: Color(0xff1B1212)),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -310,19 +506,19 @@ class _StudentInfoState extends State<StudentInfo> {
             child: Row(
               children: [
                 _buildStatChip(
-                  'Total Students', 
+                  'Total Users', 
                   studentsInfo.length.toString(),
                   Colors.blue,
                 ),
                 const SizedBox(width: 16),
                 _buildStatChip(
-                  'With Billing Info', 
+                  'With Billing Records', 
                   studentsInfo.where((s) => s['hasBillingInfo']).length.toString(),
                   Colors.green,
                 ),
                 const SizedBox(width: 16),
                 _buildStatChip(
-                  'Without Billing', 
+                  'No Billing Records', 
                   studentsInfo.where((s) => !s['hasBillingInfo']).length.toString(),
                   Colors.orange,
                 ),
@@ -339,7 +535,7 @@ class _StudentInfoState extends State<StudentInfo> {
                       children: [
                         CircularProgressIndicator(color: Color(0xff1B1212)),
                         SizedBox(height: 16),
-                        Text('Loading students and billing information...'),
+                        Text('Loading users and billing information...'),
                       ],
                     ),
                   )
@@ -375,8 +571,8 @@ class _StudentInfoState extends State<StudentInfo> {
                                 const SizedBox(height: 16),
                                 Text(
                                   _searchQuery.isEmpty 
-                                      ? 'No students found'
-                                      : 'No students found matching your search',
+                                      ? 'No users found'
+                                      : 'No users found matching your search',
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(fontSize: 16),
                                 ),
@@ -480,6 +676,14 @@ class _StudentInfoState extends State<StudentInfo> {
                         ),
                       ),
                       Text(
+                        'Role: ${student['role'] ?? 'Unknown'}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
                         student['email'] ?? 'No email',
                         style: TextStyle(
                           fontSize: 14,
@@ -504,7 +708,7 @@ class _StudentInfoState extends State<StudentInfo> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    hasBilling ? 'Has Billing' : 'No Billing',
+                    hasBilling ? 'Has Billing Records' : 'No Billing Records',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -520,32 +724,9 @@ class _StudentInfoState extends State<StudentInfo> {
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Icon(Icons.receipt_long, color: Color(0xff1B1212), size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Billing Information',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xff1B1212),
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${billingInfo.length} Payment${billingInfo.length != 1 ? 's' : ''}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
               
-              // Show billing entries
-              ...billingInfo.map((billing) => _buildBillingInfoCard(billing)).toList(),
+              // Single billing information container
+              _buildCombinedBillingInfoCard(billingInfo),
             ] else ...[
               const SizedBox(height: 16),
               Container(
@@ -561,7 +742,7 @@ class _StudentInfoState extends State<StudentInfo> {
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
-                        'This student has not provided billing information yet',
+                        'This user has no billing records yet',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.orange,
@@ -578,21 +759,32 @@ class _StudentInfoState extends State<StudentInfo> {
     );
   }
 
-  Widget _buildBillingInfoCard(Map<String, dynamic> billing) {
+  Widget _buildCombinedBillingInfoCard(List<Map<String, dynamic>> billingInfo) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.green[50],
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.green[200]!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Card info header
+          // Header with count
           Row(
             children: [
+              const Icon(Icons.receipt_long, color: Color(0xff1B1212), size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Billing Information',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xff1B1212),
+                ),
+              ),
+              const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -600,57 +792,175 @@ class _StudentInfoState extends State<StudentInfo> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  billing['cardType'] ?? 'Card',
+                  '${billingInfo.length} Record${billingInfo.length != 1 ? 's' : ''}',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                billing['maskedNumber'] ?? 'Card ****',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const Spacer(),
-              if (billing['createdAt'] != null)
-                Text(
-                  _formatDate(billing['createdAt']),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey[600],
-                  ),
-                ),
             ],
           ),
           
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
           
-          // Billing details
-          if (billing['billingFullName']?.isNotEmpty == true)
-            _buildBillingField(
-              'Full Name',
-              billing['billingFullName'],
-              Icons.person_outline,
-            ),
-          
-          if (billing['billingEmail']?.isNotEmpty == true)
-            _buildBillingField(
-              'Email',
-              billing['billingEmail'],
-              Icons.email_outlined,
-            ),
-          
-          if (billing['billingIdNumberHash']?.isNotEmpty == true)
-            _buildBillingField(
-              'ID Number',
-              '***-***-***-** (Encrypted)',
-              Icons.security,
-              isSecure: true,
+          // Show billing information from the most recent record
+          if (billingInfo.isNotEmpty)
+            Builder(
+              builder: (context) {
+                final latestBilling = billingInfo.first;
+                
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Billing details
+                    if (latestBilling['billingFullName']?.isNotEmpty == true)
+                      _buildBillingField(
+                        'Full Name',
+                        latestBilling['billingFullName'],
+                        Icons.person_outline,
+                      ),
+                    
+                    if (latestBilling['billingEmail']?.isNotEmpty == true)
+                      _buildBillingField(
+                        'Email',
+                        latestBilling['billingEmail'],
+                        Icons.email_outlined,
+                      ),
+                    
+                    // Show ID Number (check if it's a hash or original number)
+                    Builder(
+                      builder: (context) {
+                        // Convert to string and trim any whitespace
+                        final idNumber = (latestBilling['billingIdNumber'] ?? '').toString().trim();
+                        if (idNumber.isNotEmpty) {
+                          // Check if it looks like a hash (long string with hex characters)
+                          final isHash = idNumber.length > 20 && RegExp(r'^[a-f0-9]+$').hasMatch(idNumber);
+                          
+                          if (isHash) {
+                            return _buildBillingField(
+                              'ID Number (Hash Detected)',
+                              'Old data format - need new payment',
+                              Icons.warning,
+                              isSecure: true,
+                            );
+                          } else {
+                            return _buildBillingField(
+                              'ID Number',
+                              idNumber,
+                              Icons.badge,
+                              isSecure: false,
+                            );
+                          }
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    
+                    // Show hashed version for comparison
+                    if (latestBilling['billingIdNumberHash']?.isNotEmpty == true)
+                      _buildBillingField(
+                        'ID Number (Hashed)',
+                        latestBilling['billingIdNumberHash'],
+                        Icons.security,
+                        isSecure: true,
+                      ),
+                    
+                    // Debug: Show raw data info
+                    Builder(
+                      builder: (context) {
+                        final rawIdNumber = latestBilling['billingIdNumber'];
+                        final rawType = rawIdNumber.runtimeType.toString();
+                        final rawValue = rawIdNumber.toString();
+                        
+                        return _buildBillingField(
+                          'Debug - Raw Data',
+                          'Type: $rawType, Value: "$rawValue"',
+                          Icons.bug_report,
+                          isSecure: true,
+                        );
+                      },
+                    ),
+                    
+                    const SizedBox(height: 12),
+                    const Divider(color: Colors.green),
+                    const SizedBox(height: 8),
+                    
+                    // Payment summary
+                    Row(
+                      children: [
+                        const Icon(Icons.payment, color: Colors.green, size: 16),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Payment Summary:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '₺${latestBilling['amount']?.toStringAsFixed(2) ?? '0.00'}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Order ID
+                    if (latestBilling['orderId']?.isNotEmpty == true)
+                      _buildBillingField(
+                        'Order ID',
+                        latestBilling['orderId'],
+                        Icons.receipt_long,
+                      ),
+                    
+                    // Payment date
+                    if (latestBilling['paymentDate'] != null)
+                      _buildBillingField(
+                        'Payment Date',
+                        _formatDate(latestBilling['paymentDate']),
+                        Icons.calendar_today,
+                      ),
+                    
+                    // If there are multiple records, show a note
+                    if (billingInfo.length > 1) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.blue[600], size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'This user has ${billingInfo.length} billing records. Showing the most recent one.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue[700],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
         ],
       ),
