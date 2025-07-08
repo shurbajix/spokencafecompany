@@ -26,10 +26,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp( 
       debugShowCheckedModeBanner: false,
       title: 'Spoken Cafe Control',
-      home: const Login(), 
+      home: const Login(),
     );
   }
 }

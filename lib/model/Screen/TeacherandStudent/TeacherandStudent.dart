@@ -22,7 +22,7 @@ class _TeacherandStudentState extends State<TeacherandStudent>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadTeachersData();
   }
 
@@ -1076,6 +1076,443 @@ class _TeacherandStudentState extends State<TeacherandStudent>
     );
   }
 
+  Widget _buildPaymentRequests() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('payment_requests')
+          .orderBy('requestedAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              color: Color(0xff1B1212),
+              backgroundColor: Colors.white,
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error loading payment requests: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+
+        final paymentRequests = snapshot.data?.docs ?? [];
+
+        if (paymentRequests.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.payment,
+                  size: 64,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'No Payment Requests',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Payment requests from teachers will appear here',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: paymentRequests.length,
+          itemBuilder: (context, index) {
+            final request = paymentRequests[index].data() as Map<String, dynamic>;
+            final requestId = paymentRequests[index].id;
+            final teacherName = request['teacherName'] ?? 'Unknown Teacher';
+            final teacherEmail = request['teacherEmail'] ?? '';
+            final studentCount = request['studentCount'] ?? 0;
+            final pricePerStudent = request['pricePerStudent'] ?? 150.0;
+            final totalAmount = request['totalAmount'] ?? 0.0;
+            final status = request['status'] ?? 'pending';
+            final requestedAt = request['requestedAt'] as Timestamp?;
+            final ibanInfo = request['ibanInfo'] as Map<String, dynamic>?;
+            final notes = request['notes'] ?? '';
+
+            // Get status color
+            Color statusColor;
+            String statusText;
+            switch (status) {
+              case 'pending':
+                statusColor = Colors.orange;
+                statusText = 'Pending';
+                break;
+              case 'approved':
+                statusColor = Colors.blue;
+                statusText = 'Approved';
+                break;
+              case 'rejected':
+                statusColor = Colors.red;
+                statusText = 'Rejected';
+                break;
+              case 'paid':
+                statusColor = Colors.green;
+                statusText = 'Paid';
+                break;
+              default:
+                statusColor = Colors.grey;
+                statusText = 'Unknown';
+            }
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 16),
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header with teacher info and status
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Color(0xff1B1212),
+                          child: Text(
+                            teacherName.isNotEmpty ? teacherName[0].toUpperCase() : 'T',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                teacherName,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                              Text(
+                                teacherEmail,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: statusColor,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            statusText,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Payment details
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[200]!),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Student Count:',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                              Text(
+                                '$studentCount',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Price per Student:',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                              Text(
+                                '${pricePerStudent.toStringAsFixed(0)} TL',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Divider(),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total Amount:',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xff1B1212),
+                                ),
+                              ),
+                              Text(
+                                '${totalAmount.toStringAsFixed(0)} TL',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // IBAN Information
+                    if (ibanInfo != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                                                         Row(
+                               children: [
+                                 Icon(Icons.account_balance, color: Color(0xff1B1212), size: 20),
+                                 SizedBox(width: 8),
+                                 Text(
+                                   'IBAN Information',
+                                   style: TextStyle(
+                                     fontSize: 16,
+                                     fontWeight: FontWeight.bold,
+                                     color: Color(0xff1B1212),
+                                   ),
+                                 ),
+                               ],
+                             ),
+                            const SizedBox(height: 12),
+                            _buildIBANField(
+                              'Account Holder',
+                              ibanInfo['holderName'] ?? 'Not provided',
+                              Icons.person_outline,
+                            ),
+                            const SizedBox(height: 8),
+                            _buildIBANField(
+                              'Phone Number',
+                              ibanInfo['phoneNumber'] ?? 'Not provided',
+                              Icons.phone_outlined,
+                            ),
+                            const SizedBox(height: 8),
+                            _buildIBANField(
+                              'IBAN Number',
+                              ibanInfo['iban'] ?? 'Not provided',
+                              Icons.account_balance_outlined,
+                              isIBAN: true,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    
+                    // Request details
+                    Row(
+                      children: [
+                        Icon(Icons.schedule, size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Requested: ${requestedAt != null ? DateFormat('yyyy/MM/dd HH:mm').format(requestedAt.toDate()) : 'Unknown'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          'ID: ${requestId.substring(0, 8)}...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    // Action buttons for pending requests
+                    if (status == 'pending') ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => _updatePaymentRequestStatus(requestId, 'approved'),
+                              child: const Text('Approve'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => _updatePaymentRequestStatus(requestId, 'rejected'),
+                              child: const Text('Reject'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    
+                    // Notes section
+                    if (notes.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.yellow[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.yellow[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.note, color: Colors.orange, size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Admin Notes',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              notes,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Update payment request status
+  Future<void> _updatePaymentRequestStatus(String requestId, String newStatus) async {
+    try {
+      await _firestore
+          .collection('payment_requests')
+          .doc(requestId)
+          .update({
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Payment request ${newStatus} successfully'),
+            backgroundColor: newStatus == 'approved' ? Colors.green : Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating payment request: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildReports() {
     return const Center(
       child: Text(
@@ -1121,6 +1558,10 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                   text: 'Analytics',
                 ),
                 Tab(
+                  icon: Icon(Icons.payment),
+                  text: 'Payment Requests',
+                ),
+                Tab(
                   icon: Icon(Icons.assignment),
                   text: 'Reports',
                 ),
@@ -1134,6 +1575,7 @@ class _TeacherandStudentState extends State<TeacherandStudent>
               children: [
                 _buildTeacherDashboard(),
                 _buildAnalytics(),
+              _buildPaymentRequests(),
                 _buildReports(),
               ],
             ),
