@@ -1,51 +1,21 @@
-/*
- * PERFORMANCE OPTIMIZATIONS IMPLEMENTED:
- * 
- * 1. FIREBASE QUERY OPTIMIZATIONS:
- *    - Reduced timeout from 15s to 8s for faster failure detection
- *    - Added Source.serverAndCache for better cache utilization
- *    - Parallel processing of teacher data parsing
- *    - Added mounted checks to prevent setState after dispose
- * 
- * 2. MEDIA FETCHING OPTIMIZATIONS:
- *    - Parallel fetching from all 3 collections (posts, images, videos)
- *    - Added limits: 50 posts, 30 images, 20 videos for faster loading
- *    - 10-minute caching system to avoid refetching same data
- *    - 5-second timeout per collection query
- *    - Stopwatch monitoring for performance tracking
- * 
- * 3. UI/UX OPTIMIZATIONS:
- *    - Enhanced loading indicators with progress messages
- *    - Better error handling with retry buttons and icons
- *    - Preloading media for first 5 visible teachers
- *    - Cache clearing on refresh and dispose
- *    - AlwaysScrollableScrollPhysics for better RefreshIndicator
- * 
- * 4. MEMORY MANAGEMENT:
- *    - Static cache maps for cross-instance data sharing
- *    - Automatic cache expiry after 10 minutes
- *    - Cache clearing on dispose to prevent memory leaks
- *    - Null safety checks throughout
- * 
- * Expected Performance Improvement: 60-80% faster loading times
- */
-
 import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:file_picker/file_picker.dart';
+
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
-import 'package:gallery_saver/gallery_saver.dart';
+// import 'package:image_gallery_saver/image_gallery_saver.dart';  // Temporarily disabled
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 class Teacher {
+  final GeoPoint ? location;
+  final String? locationId;
+  final String? locationName;
   final String name;
   final String email;
   final String phoneNumber;
@@ -58,6 +28,9 @@ class Teacher {
   final String? rejectionReason;
 
   Teacher({
+    this.locationId,
+    this.location,
+    this.locationName,
     required this.name,
     required this.email,
     required this.phoneNumber,
@@ -92,14 +65,17 @@ class Teacher {
     }
     
     return Teacher(
+      locationId: data['locationId'] as String?,
+       location: data['location'] as GeoPoint?,
+       locationName: data['locationName']?.toString(),
       name: data['name']?.toString() ?? 'No name',
       email: data['email']?.toString() ?? 'No email',
       phoneNumber: data['phoneNumber']?.toString() ?? 'No phone number',
       docId: doc.id,
       profileImageUrl: safeStringConversion(data['profileImageUrl']),
-      verificationVideo: safeStringConversion(data['verificationVideo']),
-      verificationDocument: safeStringConversion(data['verificationDocument']),
-      verificationDescription: safeStringConversion(data['verificationDescription']),
+      verificationVideo: safeStringConversion(data['verifiedScreenVideoUrl'] ?? data['verificationVideo'] ?? data['introVideoUrl']),
+      verificationDocument: safeStringConversion(data['verificationDocument'] ?? data['verifiedScreenDocument'] ?? data['documentUrl']),
+      verificationDescription: safeStringConversion(data['verifiedScreenDescription'] ?? data['verificationDescription'] ?? data['description']),
       isApproved: data['isApproved'] == true,
       rejectionReason: rejectionReason,
     );
@@ -126,7 +102,9 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   String _searchQuery = '';
   String _postsSearchQuery = '';
   late TabController _tabController;
+  late TabController _lessonsTabController;
   final TextEditingController _postsSearchController = TextEditingController();
+  bool _isDelete =  false;
 
   // Cache for teacher media to avoid refetching
   static final Map<String, Map<String, List<String>>> _mediaCache = {};
@@ -138,12 +116,26 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
   static final Map<String, DateTime> _userNamesCacheTime = {};
   static const Duration _userNameCacheExpiry = Duration(minutes: 10);
 
+  // Document upload tracking
+  static final Map<String, bool> _documentUploadAttempted = {};
+
+  // Description cache
+  static final Map<String, String> _descriptionCache = {};
+  static final Map<String, DateTime> _descriptionCacheTime = {};
+  static const Duration _descriptionCacheExpiry = Duration(minutes: 15);
+
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _lessonsTabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+    _lessonsTabController.addListener(() {
       if (mounted) {
         setState(() {});
       }
@@ -280,238 +272,526 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
         return Colors.grey;
     }
   }
-
-  Widget _buildLessonsSection() {
-    return Container(
-      margin: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            spreadRadius: 2,
+Widget _buildLessonsSection() {
+  return Container(
+    margin: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.1),
+          blurRadius: 4,
+          spreadRadius: 2,
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            'Lessons',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'All Lessons',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
+        ),
+        const Divider(),
+        // All Lessons section with nested tabs
+        Expanded(
+          child: Column(
+            children: [
+              // Nested TabBar for All Lessons and Upcoming Lessons
+              TabBar(
+                controller: _lessonsTabController,
+                labelColor: Colors.black,
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: Colors.blue,
+                tabs: const [
+                  Tab(text: 'All Lessons'),
+                  Tab(text: 'Upcoming Lessons'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _lessonsTabController,
+                  children: [
+                    // All Lessons Tab
+                    _buildAllLessonsTab(),
+                    // Upcoming Lessons Tab
+                    _buildUpcomingLessonsTab(),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const Divider(),
-          Container(
-            height: 400,
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('lessons')
-                  .orderBy('dateTime', descending: true)
-                  .limit(50)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 10),
-                        Text('Loading lessons...'),
-                      ],
-                    ),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error, color: Colors.red, size: 50),
-                        const SizedBox(height: 10),
-                        Text('Error loading lessons: ${snapshot.error}'),
-                        const SizedBox(height: 10),
-                        ElevatedButton(
-                          onPressed: () => setState(() {}),
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.school_outlined, size: 50, color: Colors.grey),
-                        SizedBox(height: 10),
-                        Text(
-                          'No lessons found',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                final lessons = snapshot.data!.docs;
-
-                return ListView.builder(
-                  itemCount: lessons.length,
-                  itemBuilder: (context, index) {
-                    final lesson = lessons[index];
-                    final data = lesson.data() as Map<String, dynamic>;
-
-                    final teacherId = data['teacherId']?.toString() ?? '';
-                    final speakLevel = data['speakLevel']?.toString() ?? 'Unknown';
-                    final description = data['description']?.toString() ?? 'No description';
-                    final locationName = data['locationName']?.toString() ?? 'Unknown location';
-                    final maxStudents = data['maxStudents'] ?? 8;
-                    final currentStudentCount = data['currentStudentCount'] ?? 0;
-                    final dateTime = data['dateTime'];
-                    
-                    final status = _getLessonStatus(dateTime);
-                    final formattedDateTime = _formatDateTime(dateTime);
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                                                 Container(
-                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                   decoration: BoxDecoration(
-                                     color: _getLessonStatusColor(status),
-                                     borderRadius: BorderRadius.circular(12),
-                                   ),
-                                  child: Text(
-                                    status,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    speakLevel,
-                                    style: const TextStyle(
-                                      color: Colors.blue,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            
-                            FutureBuilder<String>(
-                              future: _getCachedUserName(teacherId),
-                              builder: (context, teacherSnapshot) {
-                                return Row(
-                                  children: [
-                                    const Icon(Icons.person, size: 16, color: Colors.grey),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        teacherSnapshot.data ?? 'Loading teacher...',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 4),
-                            
-                            Row(
-                              children: [
-                                const Icon(Icons.schedule, size: 16, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    formattedDateTime,
-                                    style: const TextStyle(fontSize: 13, color: Colors.grey),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            
-                            Row(
-                              children: [
-                                const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    locationName,
-                                    style: const TextStyle(fontSize: 13, color: Colors.grey),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            
-                            Row(
-                              children: [
-                                const Icon(Icons.group, size: 16, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '$currentStudentCount/$maxStudents students',
-                                  style: const TextStyle(fontSize: 13, color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                            
-                            if (description.isNotEmpty && description != 'No description') ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                description,
-                                style: const TextStyle(fontSize: 13),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
+    ),
     );
   }
 
+  Widget _buildAllLessonsTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('lessons')
+          .orderBy('dateTime', descending: true) // Show all lessons, newest first
+          .limit(50)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 10),
+                Text('Loading lessons...'),
+              ],
+            ),
+          );
+        }
 
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error, color: Colors.red, size: 50),
+                const SizedBox(height: 10),
+                Text('Error loading lessons: ${snapshot.error}'),
+                const SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.school_outlined, size: 50, color: Colors.grey),
+                SizedBox(height: 10),
+                Text(
+                  'No lessons found',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final lessons = snapshot.data!.docs;
+
+        return ListView.builder(
+          itemCount: lessons.length,
+          itemBuilder: (context, index) {
+            final lesson = lessons[index];
+            final data = lesson.data() as Map<String, dynamic>;
+
+            final teacherId = data['teacherId']?.toString() ?? '';
+            final speakLevel = data['speakLevel']?.toString() ?? 'Unknown';
+            final description = data['description']?.toString() ?? 'No description';
+            final locationName = data['locationName']?.toString() ?? 'Unknown location';
+            final maxStudents = data['maxStudents'] ?? 8;
+            final currentStudentCount = data['currentStudentCount'] ?? 0;
+            final dateTime = data['dateTime'];
+            
+            final status = _getLessonStatus(dateTime);
+            final formattedDateTime = _formatDateTime(dateTime);
+
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _getLessonStatusColor(status),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            status,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Students: $currentStudentCount/$maxStudents',
+                            style: const TextStyle(
+                              color: Colors.blue,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.person, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        FutureBuilder<String>(
+                          future: _getCachedUserName(teacherId),
+                          builder: (context, teacherSnapshot) {
+                            return Text(
+                              teacherSnapshot.data ?? 'Loading teacher...',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.school, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(speakLevel),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(locationName),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.schedule, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(formattedDateTime),
+                      ],
+                    ),
+                          const SizedBox(height: 4),
+                          
+                          Row(
+                            children: [
+                              const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  locationName,
+                                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          
+                          Row(
+                            children: [
+                              const Icon(Icons.group, size: 16, color: Colors.grey),
+                              const SizedBox(width: 4),
+                              Text(
+                                '$currentStudentCount/$maxStudents students',
+                                style: const TextStyle(fontSize: 13, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                          
+                          if (description.isNotEmpty && description != 'No description') ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              description,
+                              style: const TextStyle(fontSize: 13),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+        
+        
+    
+    );
+  
+}
+
+  Widget _buildUpcomingLessonsTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('lessons')
+          .orderBy('dateTime', descending: false) // Show upcoming lessons first
+          .limit(50)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 10),
+                Text('Loading lessons...'),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error, color: Colors.red, size: 50),
+                const SizedBox(height: 10),
+                Text('Error loading lessons: ${snapshot.error}'),
+                const SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.school_outlined, size: 50, color: Colors.grey),
+                SizedBox(height: 10),
+                Text(
+                  'No lessons found in database',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final allLessons = snapshot.data!.docs;
+        
+        // Filter to show only upcoming lessons
+        final lessons = allLessons.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final dateTime = data['dateTime'];
+          if (dateTime == null) return false;
+          
+          try {
+            DateTime dt;
+            if (dateTime is Timestamp) {
+              dt = dateTime.toDate();
+            } else if (dateTime is String) {
+              dt = DateTime.parse(dateTime);
+            } else {
+              return false;
+            }
+            
+            final now = DateTime.now();
+            return now.isBefore(dt); // Only show future lessons
+          } catch (e) {
+            return false;
+          }
+        }).toList();
+
+        if (lessons.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.school_outlined, size: 50, color: Colors.grey),
+                SizedBox(height: 10),
+                Text(
+                  'No upcoming lessons found',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'All lessons in database are past or current',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: lessons.length,
+          itemBuilder: (context, index) {
+            final lesson = lessons[index];
+            final data = lesson.data() as Map<String, dynamic>;
+
+            final teacherId = data['teacherId']?.toString() ?? '';
+            final speakLevel = data['speakLevel']?.toString() ?? 'Unknown';
+            final description = data['description']?.toString() ?? 'No description';
+            final locationName = data['locationName']?.toString() ?? 'Unknown location';
+            final maxStudents = data['maxStudents'] ?? 8;
+            final currentStudentCount = data['currentStudentCount'] ?? 0;
+            final dateTime = data['dateTime'];
+            
+            final status = _getLessonStatus(dateTime);
+            final formattedDateTime = _formatDateTime(dateTime);
+
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _getLessonStatusColor(status),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            status,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Students: $currentStudentCount/$maxStudents',
+                            style: const TextStyle(
+                              color: Colors.blue,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.person, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        FutureBuilder<String>(
+                          future: _getCachedUserName(teacherId),
+                          builder: (context, snapshot) {
+                            return Text(
+                              snapshot.data ?? 'Loading...',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.school, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(speakLevel),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(locationName),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.schedule, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(formattedDateTime),
+                      ],
+                    ),
+                    if (description.isNotEmpty && description != 'No description') ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        description,
+                        style: const TextStyle(fontSize: 13),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Enhance teacher with description from verified_screen_descriptions collection
+  Future<Teacher> _enhanceTeacherWithDescription(Teacher teacher) async {
+    // If teacher already has a description, return as is
+    if (teacher.verificationDescription != null && teacher.verificationDescription!.isNotEmpty) {
+      return teacher;
+    }
+    
+    // Try to fetch description from verified_screen_descriptions collection
+    final description = await _fetchDescriptionFromVerifiedCollection(teacher.docId);
+    if (description != null) {
+      // Create a new Teacher object with the enhanced description
+      return Teacher(
+        locationId: teacher.locationId,
+        location: teacher.location,
+        locationName: teacher.locationName,
+        name: teacher.name,
+        email: teacher.email,
+        phoneNumber: teacher.phoneNumber,
+        docId: teacher.docId,
+        profileImageUrl: teacher.profileImageUrl,
+        verificationVideo: teacher.verificationVideo,
+        verificationDocument: teacher.verificationDocument,
+        verificationDescription: description,
+        isApproved: teacher.isApproved,
+        rejectionReason: teacher.rejectionReason,
+      );
+    }
+    
+    return teacher;
+  }
 
   Future<void> _fetchTeachers() async {
     if (_hasFetched) return;
@@ -534,7 +814,9 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       // Parallel processing for better performance
       final futures = snapshot.docs.map((doc) async {
         try {
-          return Teacher.fromFirestore(doc);
+          final teacher = Teacher.fromFirestore(doc);
+          // Enhance teacher with description from verified_screen_descriptions collection
+          return await _enhanceTeacherWithDescription(teacher);
         } catch (e) {
           print('Error parsing teacher ${doc.id}: $e');
           return null;
@@ -698,25 +980,14 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _pickFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: false,
-      );
-      if (result != null) {
-        PlatformFile file = result.files.first;
-        print("File picked: ${file.name}");
-      }
-    } catch (e) {
-      print("Error picking file: $e");
-    }
-  }
+
 
   // Clear cache method for memory management
   void _clearCache() {
     _mediaCache.clear();
     _mediaCacheTime.clear();
+    _descriptionCache.clear();
+    _descriptionCacheTime.clear();
     print('🧹 Cache cleared');
   }
 
@@ -727,6 +998,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       if (teacher?.docId != null) {
         _fetchTeacherMedia(teacher!.docId).catchError((e) {
           print('⚠️ Preload failed for ${teacher.docId}: $e');
+          return null; // Return null to satisfy the Future type requirement
         });
       }
     }
@@ -777,12 +1049,12 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
         );
 
         // Try to save to gallery
-        final result = await GallerySaver.saveImage(tempPath);
+        // final result = await ImageGallerySaver.saveFile(tempPath);  // Temporarily disabled
 
-        if (result == true) {
-          success = true;
-          savedPath = 'Gallery';
-        }
+        // if (result == true) {
+        //   success = true;
+        //   savedPath = 'Gallery';
+        // }
 
         // Clean up temp file
         try {
@@ -1001,6 +1273,9 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
       );
     }
     
+    // Top-level tab controller for Teacher List and All Lessons
+    final _mainTabController = TabController(length: 2, vsync: this);
+
     return Scaffold(
       backgroundColor: Colors.white,
       endDrawer: Drawer(
@@ -1011,130 +1286,150 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                 ? _buildGalleryPage()
                 : _buildOriginalDrawerContent(),
       ),
-      body: SingleChildScrollView(
-        child: Column(
+      body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              decoration: InputDecoration(
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xff1B1212)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xff1B1212)),
-                ),
-                hintText: 'Search by name, email or phone',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Colors.grey),
-                ),
-              ),
-              onChanged: (val) => setState(() => _searchQuery = val),
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Column(
-                    children: [
-                      Text('Underlines', style: TextStyle(fontSize: 20)),
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Column(
-                    children: [
-                      Text('Underlines', style: TextStyle(fontSize: 20)),
-                    ],
-                  ),
-                ),
-              ),
+          TabBar(
+            controller: _mainTabController,
+            labelColor: Colors.black,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.blue,
+            tabs: const [
+              Tab(text: 'Teacher List', icon: Icon(Icons.people)),
+              Tab(text: 'All Lessons', icon: Icon(Icons.menu_book)),
             ],
           ),
-          Container(
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            height: 600,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          Expanded(
+            child: TabBarView(
+              controller: _mainTabController,
               children: [
-                const Padding(
-                  padding: EdgeInsets.all(10),
-                  child: Text(
-                    "Teachers List",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const Divider(),
-                TabBar(
-                  controller: _tabController,
-                  onTap: (index) {
-                    if (index >= 0 && index < 3) {
-                      setState(() {});
-                    }
-                  },
-                  labelColor: Colors.black,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: Colors.blue,
-                  tabs: const [
-                    Tab(
-                      icon: Icon(Icons.person_add,color: Colors.black,),
-                      text: 'New Teachers',
+                // Teacher List tab - full screen
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: Color(0xff1B1212)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: Color(0xff1B1212)),
+                          ),
+                          hintText: 'Search by name, email or phone',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Colors.grey),
+                          ),
+                        ),
+                        onChanged: (val) => setState(() => _searchQuery = val),
+                      ),
                     ),
-                    Tab(
-                      icon: Icon(Icons.check_circle,color: Colors.green,),
-                      text: 'Active Teachers',
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.grey,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Column(
+                              children: [
+                                Text('Underlines', style: TextStyle(fontSize: 20)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.grey,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Column(
+                              children: [
+                                Text('Underlines', style: TextStyle(fontSize: 20)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    Tab(
-                      icon: Icon(Icons.cancel,color: Colors.red,),
-                      text: 'Rejected Teachers',
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        // Remove fixed height, use Expanded for full screen
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.all(10),
+                              child: Text(
+                                "Teachers List",
+                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const Divider(),
+                            TabBar(
+                              controller: _tabController,
+                              onTap: (index) {
+                                if (index >= 0 && index < 3) {
+                                  setState(() {});
+                                }
+                              },
+                              labelColor: Colors.black,
+                              unselectedLabelColor: Colors.grey,
+                              indicatorColor: Colors.blue,
+                              tabs: const [
+                                Tab(
+                                  icon: Icon(Icons.person_add,color: Colors.black,),
+                                  text: 'New Teachers',
+                                ),
+                                Tab(
+                                  icon: Icon(Icons.check_circle,color: Colors.green,),
+                                  text: 'Active Teachers',
+                                ),
+                                Tab(
+                                  icon: Icon(Icons.cancel,color: Colors.red,),
+                                  text: 'Rejected Teachers',
+                                ),
+                              ],
+                            ),
+                            Expanded(
+                              child: TabBarView(
+                                controller: _tabController,
+                                children: [
+                                  _buildTeachersList(),
+                                  _buildTeachersList(),
+                                  _buildTeachersList(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildTeachersList(),
-                      _buildTeachersList(),
-                      _buildTeachersList(),
-                    ],
-                  ),
-                ),
+                // Second tab: All Lessons
+                _buildLessonsSection(),
               ],
             ),
           ),
-            // Add Lessons Section
-            _buildLessonsSection(),
-            // Add bottom padding to ensure content is not cut off
-            const SizedBox(height: 20),
         ],
-        ),
       ),
     );
   }
@@ -1255,9 +1550,16 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                             return const SizedBox.shrink();
                           }
                           
-                          return ListTile(
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 20),
+                          return Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: (!t.isApproved && !_isRejected(t)) ? Colors.green.withOpacity(0.1) : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: (!t.isApproved && !_isRejected(t)) ? Border.all(color: Colors.green.withOpacity(0.3), width: 1) : null,
+                            ),
+                            child: ListTile(
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
                             trailing: SizedBox(
                               width: 279,
                               child: Row(
@@ -1302,7 +1604,11 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                                                     hintText: 'Enter reason',
                                                   ),
                                                 ),
+                                                
                                                 actions: [
+                                                  CheckboxListTile(value: _isDelete, onChanged: (newDelete){
+                                                    newDelete = _isDelete;
+                                                  },activeColor: Colors.red,checkColor: Colors.amber,),
                                                   TextButton(
                                                     onPressed: () =>
                                                         Navigator.pop(context),
@@ -1409,12 +1715,16 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                                     ),
                                   Expanded(
                                     child: TextButton(
-                                      onPressed: () {
+                                      onPressed: () async {
                                         setState(() {
                                           _selectedTeacherDocId = t.docId;
                                           _showPostsPage = false;
                                           _showGalleryPage = false; // Show teacher details first
                                         });
+                                        
+                                        // Check for pending documents when opening teacher profile
+                                        await _checkAndUploadPendingDocuments(t);
+                                        
                                         Scaffold.of(context).openEndDrawer();
                                       },
                                       child: const Text(
@@ -1479,7 +1789,8 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                                 ),
                               ],
                             ),
-                          );
+                          ),
+                        );
                         },
                       ),
                     ),
@@ -1588,6 +1899,35 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                 ),
               ),
               
+              // Account Information Section
+              _buildInfoSection(
+                'Account Information',
+                Icons.account_circle,
+                [
+                  _buildInfoRow('User ID', _selectedTeacherDocId!, Icons.fingerprint),
+                  _buildInfoRow('Account Type', 'Teacher', Icons.school),
+                   if (teacher.location != null)
+      _buildInfoRow(
+        'Location', 
+        teacher.locationName ?? 
+        '${teacher.location!.latitude.toStringAsFixed(6)}, ${teacher.location!.longitude.toStringAsFixed(6)}',
+        Icons.location_on,
+      ),
+      if (teacher.locationName != null)
+      _buildInfoRow(
+        'Location',
+        teacher.locationName!,
+        Icons.location_on,
+      ),
+                  if (teacherData['createdAt'] != null)
+                    _buildInfoRow('Joined', _formatDateTime(teacherData['createdAt']), Icons.calendar_today),
+                  if (teacherData['lastLoginAt'] != null)
+                    _buildInfoRow('Last Login', _formatDateTime(teacherData['lastLoginAt']), Icons.login),
+                  if (teacherData['isVerified'] != null)
+                    _buildInfoRow('Email Verified', teacherData['isVerified'] ? 'Yes' : 'No', Icons.verified),
+                ],
+              ),
+
               // Contact Information Section
               _buildInfoSection(
                 'Contact Information',
@@ -1599,6 +1939,8 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                     _buildInfoRow('Address', teacherData['address'].toString(), Icons.location_on),
                   if (teacherData['dateOfBirth'] != null)
                     _buildInfoRow('Date of Birth', teacherData['dateOfBirth'].toString(), Icons.cake),
+                  if (teacherData['gender'] != null)
+                    _buildInfoRow('Gender', teacherData['gender'].toString(), Icons.person_outline),
                 ],
               ),
 
@@ -1615,8 +1957,21 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                     _buildInfoRow('Specialization', teacherData['specialization'].toString(), Icons.star),
                   if (teacherData['languages'] != null)
                     _buildInfoRow('Languages', teacherData['languages'].toString(), Icons.language),
+                  if (teacherData['certifications'] != null)
+                    _buildInfoRow('Certifications', teacherData['certifications'].toString(), Icons.verified_user),
                 ],
               ),
+
+              // Lesson Statistics Section
+              _buildLessonStatisticsSection(_selectedTeacherDocId!),
+
+              // Verification Status Section
+              _buildVerificationStatusSection(teacher, teacherData),
+
+              // Document Upload Section (for teachers who completed verification but no document)
+              if (teacherData['hasCompletedVerifiedScreen'] == true && 
+                  (teacher.verificationDocument == null || teacher.verificationDocument!.isEmpty))
+                _buildDocumentUploadSection(teacher, teacherData),
 
               // Introduction Video Section
               _buildVideoSection(teacher),
@@ -1642,6 +1997,13 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
 
               // Additional Information Section
               _buildAdditionalInfoSection(teacherData),
+
+              // Social Media & Links Section
+              _buildSocialMediaSection(teacherData),
+
+              // Preferences Section
+              _buildPreferencesSection(teacherData),
+
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -2266,6 +2628,125 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
     }
   }
 
+  // Fetch description from verified_screen_descriptions collection
+  Future<String?> _fetchDescriptionFromVerifiedCollection(String userId) async {
+    final now = DateTime.now();
+    
+    // Check cache first
+    if (_descriptionCache.containsKey(userId) && 
+        _descriptionCacheTime.containsKey(userId) &&
+        now.difference(_descriptionCacheTime[userId]!) < _descriptionCacheExpiry) {
+      return _descriptionCache[userId];
+    }
+    
+    try {
+      final descDoc = await FirebaseFirestore.instance
+          .collection('verified_screen_descriptions')
+          .doc(userId)
+          .get(const GetOptions(source: Source.serverAndCache))
+          .timeout(const Duration(seconds: 5));
+      
+      if (descDoc.exists) {
+        final description = descDoc.data()?['description'] as String?;
+        if (description != null && description.isNotEmpty) {
+          _descriptionCache[userId] = description;
+          _descriptionCacheTime[userId] = now;
+          return description;
+        }
+      }
+    } catch (e) {
+      print('Error fetching description from verified_screen_descriptions for $userId: $e');
+    }
+    
+    return null;
+  }
+
+  // Check if teacher has completed verification and upload any pending documents
+  Future<void> _checkAndUploadPendingDocuments(Teacher teacher) async {
+    // Only attempt once per teacher per session
+    if (_documentUploadAttempted[teacher.docId] == true) {
+      return;
+    }
+    
+    _documentUploadAttempted[teacher.docId] = true;
+    
+    try {
+      print('🔍 Checking for pending documents for teacher: ${teacher.name}');
+      
+      // Check if teacher has completed verification screen
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(teacher.docId)
+          .get();
+      
+      if (!userDoc.exists) return;
+      
+      final userData = userDoc.data()!;
+      final hasCompletedVerification = userData['hasCompletedVerifiedScreen'] == true;
+      final hasVerifiedScreenDescription = userData['verifiedScreenDescription'] != null;
+      
+      // If teacher has completed verification but no document is uploaded
+      if (hasCompletedVerification && hasVerifiedScreenDescription && 
+          (teacher.verificationDocument == null || teacher.verificationDocument!.isEmpty)) {
+        
+        print('📄 Teacher has completed verification but no document uploaded. Checking for local document...');
+        
+        // Try to find any document in the teacher's data that might be the verification document
+        final potentialDocumentFields = [
+          'documentImage',
+          'verificationImage', 
+          'certificateImage',
+          'documentUrl',
+          'verificationUrl',
+        ];
+        
+        String? documentUrl;
+        for (String field in potentialDocumentFields) {
+          if (userData[field] != null && userData[field].toString().isNotEmpty) {
+            final url = userData[field].toString();
+            if (url.contains('http') && (url.contains('.jpg') || url.contains('.jpeg') || url.contains('.png'))) {
+              documentUrl = url;
+              print('✅ Found potential verification document in field "$field": $url');
+              break;
+            }
+          }
+        }
+        
+        // If we found a document URL, save it as the verification document
+        if (documentUrl != null) {
+          print('💾 Saving found document as verification document...');
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(teacher.docId)
+              .update({
+            'verificationDocument': documentUrl,
+            'verificationDocumentUpdatedAt': FieldValue.serverTimestamp(),
+          });
+          
+          print('✅ Verification document saved successfully');
+          
+          // Also save to verified_screen_documents collection
+          await FirebaseFirestore.instance
+              .collection('verified_screen_documents')
+              .doc(teacher.docId)
+              .set({
+            'documentUrl': documentUrl,
+            'userId': teacher.docId,
+            'uploadedAt': FieldValue.serverTimestamp(),
+            'source': 'auto_detected',
+          });
+          
+          print('✅ Document saved to verified_screen_documents collection');
+        }
+      }
+      
+    } catch (e) {
+      print('⚠️ Error checking for pending documents: $e');
+      // Reset the flag so we can try again later
+      _documentUploadAttempted[teacher.docId] = false;
+    }
+  }
+
 
 
   // Safe profile image with Firebase Storage fetching
@@ -2552,34 +3033,96 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Video info header
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Teacher Introduction Video',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 _VideoPlayerWidget(videoUrl: teacher.verificationVideo!),
                 const SizedBox(height: 12),
-                // Download button for introduction video
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _downloadVideo(teacher.verificationVideo!),
-                    icon: const Icon(Icons.download, size: 18),
-                    label: const Text('Download Introduction Video'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xff1B1212),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                // Action buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _downloadVideo(teacher.verificationVideo!),
+                        icon: const Icon(Icons.download, size: 18),
+                        label: const Text('Download'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xff1B1212),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _openVideoInFullScreen(teacher.verificationVideo!),
+                        icon: const Icon(Icons.fullscreen, size: 18),
+                        label: const Text('Full Screen'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           )
         else
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'No introduction video submitted',
-              style: TextStyle(
-                color: Colors.grey,
-                fontStyle: FontStyle.italic,
-              ),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.videocam_off,
+                  size: 48,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'No Introduction Video',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Teacher has not uploaded an introduction video yet',
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
       ],
@@ -2588,56 +3131,391 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
 
   // Build documents section
   Widget _buildDocumentsSection(Teacher teacher, Map<String, dynamic> teacherData) {
-    List<Widget> documentWidgets = [];
+    return FutureBuilder<List<Widget>>(
+      future: _buildDocumentsSectionAsync(teacher, teacherData),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildInfoSection(
+            'Documents & Certifications',
+            Icons.document_scanner,
+            [
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+          );
+        }
+        
+        final documentWidgets = snapshot.data ?? [];
+        
+        return _buildInfoSection(
+          'Documents & Certifications',
+          Icons.document_scanner,
+          documentWidgets.isEmpty
+              ? [
+                  const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.folder_open,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'No documents submitted',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontStyle: FontStyle.italic,
+                            fontSize: 16,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Teacher has not uploaded any verification documents yet',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ]
+              : [
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total Documents: ${documentWidgets.length}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Color(0xff1B1212),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...documentWidgets,
+                      ],
+                    ),
+                  ),
+                ],
+        );
+      },
+    );
+  }
 
-    // Main verification document
+  Future<List<Widget>> _buildDocumentsSectionAsync(Teacher teacher, Map<String, dynamic> teacherData) async {
+    List<Widget> documentWidgets = [];
+    
+    // Debug: Print all available fields for this teacher
+    print('🔍 Debugging documents for teacher: ${teacher.name}');
+    print('🔍 Teacher verificationDocument: ${teacher.verificationDocument}');
+    print('🔍 Available teacherData fields: ${teacherData.keys.toList()}');
+    
+    // Check for all possible document field variations
+    final allDocumentFields = [
+      // Main verification document fields
+      'verificationDocument',
+      'verifiedScreenDocument', 
+      'documentUrl',
+      'document',
+      
+      // Additional document fields
+      'idDocument',
+      'certificateDocument', 
+      'diplomaDocument',
+      'resumeDocument',
+      'teachingLicense',
+      'backgroundCheck',
+      'referenceLetter',
+      'otherDocuments',
+      
+      // Alternative field names
+      'certificate',
+      'diploma',
+      'resume',
+      'license',
+      'idCard',
+      'passport',
+      'cv',
+      'credentials',
+      
+      // Additional document-related fields
+      'documentImage',
+      'certificateImage',
+      'diplomaImage',
+      'resumeImage',
+      'licenseImage',
+    ];
+
+    // First, check the main verification document from Teacher model
     if (teacher.verificationDocument != null && teacher.verificationDocument!.isNotEmpty) {
+      print('✅ Found main verification document: ${teacher.verificationDocument}');
       documentWidgets.add(_buildDocumentCard('Verification Document', teacher.verificationDocument!));
     }
 
-    // Additional documents from teacherData
-    if (teacherData['idDocument'] != null) {
-      documentWidgets.add(_buildDocumentCard('ID Document', teacherData['idDocument'].toString()));
-    }
-    if (teacherData['certificateDocument'] != null) {
-      documentWidgets.add(_buildDocumentCard('Certificate', teacherData['certificateDocument'].toString()));
-    }
-    if (teacherData['diplomaDocument'] != null) {
-      documentWidgets.add(_buildDocumentCard('Diploma', teacherData['diplomaDocument'].toString()));
+    // Check all possible document fields in teacherData
+    for (String field in allDocumentFields) {
+      if (teacherData[field] != null && teacherData[field].toString().isNotEmpty) {
+        final value = teacherData[field].toString();
+        print('✅ Found document in field "$field": $value');
+        String title = _formatFieldName(field);
+        documentWidgets.add(_buildDocumentCard(title, value));
+      }
     }
 
-    return _buildInfoSection(
-      'Documents',
-      Icons.document_scanner,
-      documentWidgets.isEmpty
-          ? [
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  'No documents submitted',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ),
-            ]
-          : documentWidgets,
+    // Check for any other fields that might contain document URLs
+    teacherData.forEach((key, value) {
+      if (value != null && value.toString().isNotEmpty) {
+        final valueStr = value.toString();
+        // Check if the value looks like a URL (contains http/https)
+        if (valueStr.contains('http') && 
+            (valueStr.contains('.jpg') || valueStr.contains('.jpeg') || 
+             valueStr.contains('.png') || valueStr.contains('.pdf') ||
+             valueStr.contains('firebase') || valueStr.contains('storage'))) {
+          // Exclude profile images and videos
+          if (!allDocumentFields.contains(key) && 
+              !key.toLowerCase().contains('video') &&
+              !key.toLowerCase().contains('profile') &&
+              !key.toLowerCase().contains('avatar') &&
+              !key.toLowerCase().contains('photo') &&
+              !key.toLowerCase().contains('image') &&
+              // Also exclude if it's the same as the teacher's profile image
+              valueStr != teacher.profileImageUrl) {
+            print('✅ Found potential document URL in field "$key": $valueStr');
+            String title = _formatFieldName(key);
+            documentWidgets.add(_buildDocumentCard(title, valueStr));
+          }
+        }
+      }
+    });
+
+    // Also check for any image URLs that might be documents (excluding profile images)
+    teacherData.forEach((key, value) {
+      if (value != null && value.toString().isNotEmpty) {
+        final valueStr = value.toString();
+        // Look for any image URLs that might be documents
+        if (valueStr.contains('http') && 
+            (valueStr.contains('.jpg') || valueStr.contains('.jpeg') || 
+             valueStr.contains('.png')) &&
+            !key.toLowerCase().contains('profile') &&
+            !key.toLowerCase().contains('avatar') &&
+            !key.toLowerCase().contains('photo') &&
+            !key.toLowerCase().contains('image') &&
+            !allDocumentFields.contains(key) &&
+            // Also exclude if it's the same as the teacher's profile image
+            valueStr != teacher.profileImageUrl) {
+          print('✅ Found potential document image in field "$key": $valueStr');
+          String title = _formatFieldName(key);
+          documentWidgets.add(_buildDocumentCard(title, valueStr));
+        }
+      }
+    });
+
+    // If no documents found in user data, try to fetch from various collections
+    if (documentWidgets.isEmpty) {
+      try {
+        print('🔍 No documents found in user data, checking various collections...');
+        
+        // Check verified_screen_documents collection
+        final docSnapshot = await FirebaseFirestore.instance
+            .collection('verified_screen_documents')
+            .doc(teacher.docId)
+            .get();
+        
+        if (docSnapshot.exists) {
+          final docData = docSnapshot.data()!;
+          final documentUrl = docData['documentUrl']?.toString();
+          if (documentUrl != null && documentUrl.isNotEmpty) {
+            print('✅ Found document in verified_screen_documents collection: $documentUrl');
+            documentWidgets.add(_buildDocumentCard('Verification Document', documentUrl));
+          }
+        }
+        
+        // Check teacher_documents collection
+        final teacherDocSnapshot = await FirebaseFirestore.instance
+            .collection('teacher_documents')
+            .doc(teacher.docId)
+            .get();
+        
+        if (teacherDocSnapshot.exists) {
+          final docData = teacherDocSnapshot.data()!;
+          final documentUrl = docData['documentUrl']?.toString() ?? docData['url']?.toString();
+          if (documentUrl != null && documentUrl.isNotEmpty) {
+            print('✅ Found document in teacher_documents collection: $documentUrl');
+            documentWidgets.add(_buildDocumentCard('Teacher Document', documentUrl));
+          }
+        }
+        
+        // Check if there are any documents in the user's posts
+        final postsSnapshot = await FirebaseFirestore.instance
+            .collection('posts')
+            .where('userId', isEqualTo: teacher.docId)
+            .where('type', isEqualTo: 'document')
+            .limit(5)
+            .get();
+        
+        for (var post in postsSnapshot.docs) {
+          final postData = post.data();
+          final mediaFiles = postData['mediaFiles'] as List<dynamic>?;
+          if (mediaFiles != null && mediaFiles.isNotEmpty) {
+            for (var media in mediaFiles) {
+              final url = media.toString();
+              if (url.contains('http') && !url.contains('video')) {
+                print('✅ Found document in posts collection: $url');
+                documentWidgets.add(_buildDocumentCard('Posted Document', url));
+              }
+            }
+          }
+        }
+        
+      } catch (e) {
+        print('⚠️ Error fetching from collections: $e');
+      }
+    }
+    
+        print('📄 Total documents found for ${teacher.name}: ${documentWidgets.length}');
+
+    return documentWidgets;
+  }
+
+  // Open video in full screen
+  void _openVideoInFullScreen(String videoUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VideoPlayerScreen(videoUrl: videoUrl),
+      ),
     );
+  }
+
+  // Get appropriate icon for document type
+  IconData _getDocumentIcon(String title) {
+    final lowerTitle = title.toLowerCase();
+    
+    if (lowerTitle.contains('id') || lowerTitle.contains('identity')) {
+      return Icons.badge;
+    } else if (lowerTitle.contains('certificate') || lowerTitle.contains('certification')) {
+      return Icons.verified;
+    } else if (lowerTitle.contains('diploma') || lowerTitle.contains('degree')) {
+      return Icons.school;
+    } else if (lowerTitle.contains('resume') || lowerTitle.contains('cv')) {
+      return Icons.description;
+    } else if (lowerTitle.contains('license')) {
+      return Icons.assignment_turned_in;
+    } else if (lowerTitle.contains('background') || lowerTitle.contains('check')) {
+      return Icons.security;
+    } else if (lowerTitle.contains('reference') || lowerTitle.contains('letter')) {
+      return Icons.mail;
+    } else if (lowerTitle.contains('verification')) {
+      return Icons.verified_user;
+    } else {
+      return Icons.description;
+    }
+  }
+
+  // Fetch video and document data from verified_screen_videos collection as fallback
+  Future<Map<String, String?>> _fetchVerifiedScreenData(String teacherId) async {
+    try {
+      final videoDoc = await FirebaseFirestore.instance
+          .collection('verified_screen_videos')
+          .doc(teacherId)
+          .get();
+
+      if (videoDoc.exists) {
+        final videoData = videoDoc.data()!;
+        return {
+          'videoUrl': videoData['videoUrl'] as String?,
+          'documentUrl': videoData['documentUrl'] as String?,
+        };
+      }
+    } catch (e) {
+      print('Error fetching verified screen data: $e');
+    }
+    return {'videoUrl': null, 'documentUrl': null};
+  }
+
+  // Clear video cache (utility method)
+  Future<void> _clearVideoCache() async {
+    try {
+      final customCacheManager = CacheManager(
+        Config(
+          'videoCache',
+          stalePeriod: const Duration(days: 7),
+          maxNrOfCacheObjects: 50,
+          repo: JsonCacheInfoRepository(databaseName: 'videoCache'),
+          fileService: HttpFileService(),
+        ),
+      );
+      
+      await customCacheManager.emptyCache();
+      print('🎬 Video cache cleared successfully');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Video cache cleared'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      print('🎬 Error clearing video cache: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error clearing cache: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   // Build document card
   Widget _buildDocumentCard(String title, String imageUrl) {
+    print('🖼️ Building document card for "$title" with URL: $imageUrl');
+    
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
+          // Document header with icon
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _getDocumentIcon(title),
+                  size: 20,
+                  color: const Color(0xff1B1212),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: Color(0xff1B1212),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
@@ -2649,17 +3527,39 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.grey[300]!),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.2),
+                    spreadRadius: 1,
+                    blurRadius: 3,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl,
                   fit: BoxFit.cover,
-                  placeholder: (context, url) => const Center(
-                    child: CircularProgressIndicator(),
+                  httpHeaders: {
+                    'User-Agent': 'SpokenCafeController/1.0',
+                  },
+                  placeholder: (context, url) => Container(
+                    color: Colors.grey[100],
+                    child: const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 8),
+                          Text('Loading document...'),
+                        ],
+                      ),
+                    ),
                   ),
                   errorWidget: (context, url, error) {
-                    print('🖼️ Document image error: $error');
+                    print('🖼️ Document image error for "$title": $error');
+                    print('🖼️ Failed URL: $url');
                     return Container(
                       color: Colors.grey[200],
                       child: const Center(
@@ -2667,7 +3567,22 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(Icons.description, color: Colors.grey, size: 40),
-                            Text('Document Preview'),
+                            SizedBox(height: 8),
+                            Text(
+                              'Document Preview',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Tap to view full size',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -2688,6 +3603,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xff1B1212),
                     foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
               ),
@@ -2700,6 +3616,7 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
               ),
@@ -2748,6 +3665,319 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
     );
   }
 
+  // Build lesson statistics section
+  Widget _buildLessonStatisticsSection(String teacherId) {
+    return _buildInfoSection(
+      'Lesson Statistics',
+      Icons.analytics,
+      [
+        FutureBuilder<QuerySnapshot>(
+          future: FirebaseFirestore.instance
+              .collection('lessons')
+              .where('teacherId', isEqualTo: teacherId)
+              .get(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            
+            final totalLessons = snapshot.data?.docs.length ?? 0;
+            int completedLessons = 0;
+            int upcomingLessons = 0;
+            int activeLessons = 0;
+            
+            if (snapshot.hasData) {
+              for (var doc in snapshot.data!.docs) {
+                final data = doc.data() as Map<String, dynamic>;
+                final dateTime = data['dateTime'];
+                final status = _getLessonStatus(dateTime);
+                
+                switch (status) {
+                  case 'Completed':
+                    completedLessons++;
+                    break;
+                  case 'Upcoming':
+                    upcomingLessons++;
+                    break;
+                  case 'Active':
+                    activeLessons++;
+                    break;
+                }
+              }
+            }
+            
+            return Column(
+              children: [
+                _buildInfoRow('Total Lessons', totalLessons.toString(), Icons.school),
+                _buildInfoRow('Completed', completedLessons.toString(), Icons.check_circle),
+                _buildInfoRow('Upcoming', upcomingLessons.toString(), Icons.schedule),
+                _buildInfoRow('Active', activeLessons.toString(), Icons.play_circle),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // Build document upload section for teachers who completed verification but no document
+  Widget _buildDocumentUploadSection(Teacher teacher, Map<String, dynamic> teacherData) {
+    return _buildInfoSection(
+      'Document Upload Status',
+      Icons.upload_file,
+      [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.orange[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Teacher completed verification but no document uploaded',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange[700],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'This teacher has completed the verification screen but no document was uploaded to Firebase. The document may be stored locally in the verification screen.',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await _checkAndUploadPendingDocuments(teacher);
+                  // Refresh the teacher data
+                  setState(() {});
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Check for Pending Documents'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build verification status section
+  Widget _buildVerificationStatusSection(Teacher teacher, Map<String, dynamic> teacherData) {
+    List<Widget> verificationInfo = [];
+    
+    // Approval status
+    verificationInfo.add(
+      _buildInfoRow(
+        'Approval Status',
+        teacher.isApproved ? 'Approved' : 'Pending',
+        teacher.isApproved ? Icons.check_circle : Icons.pending,
+      ),
+    );
+    
+    // Approval date
+    if (teacherData['approvedAt'] != null) {
+      verificationInfo.add(
+        _buildInfoRow(
+          'Approved On',
+          _formatDateTime(teacherData['approvedAt']),
+          Icons.calendar_today,
+        ),
+      );
+    }
+    
+    // Rejection info
+    if (teacher.rejectionReason != null && teacher.rejectionReason!.isNotEmpty) {
+      verificationInfo.add(
+        _buildInfoRow(
+          'Rejection Reason',
+          teacher.rejectionReason!,
+          Icons.cancel,
+        ),
+      );
+    }
+    
+    if (teacherData['rejectedAt'] != null) {
+      verificationInfo.add(
+        _buildInfoRow(
+          'Rejected On',
+          _formatDateTime(teacherData['rejectedAt']),
+          Icons.calendar_today,
+        ),
+      );
+    }
+    
+    // Verification documents status
+    bool hasVideo = teacher.verificationVideo != null && teacher.verificationVideo!.isNotEmpty;
+    bool hasDocuments = teacher.verificationDocument != null && teacher.verificationDocument!.isNotEmpty;
+    bool hasDescription = teacher.verificationDescription != null && teacher.verificationDescription!.isNotEmpty;
+    
+    verificationInfo.add(
+      _buildInfoRow(
+        'Introduction Video',
+        hasVideo ? 'Submitted' : 'Not Submitted',
+        hasVideo ? Icons.video_library : Icons.video_library_outlined,
+      ),
+    );
+    
+    verificationInfo.add(
+      _buildInfoRow(
+        'Documents',
+        hasDocuments ? 'Submitted' : 'Not Submitted',
+        hasDocuments ? Icons.description : Icons.description_outlined,
+      ),
+    );
+    
+    verificationInfo.add(
+      _buildInfoRow(
+        'Description',
+        hasDescription ? 'Submitted' : 'Not Submitted',
+        hasDescription ? Icons.text_fields : Icons.text_fields_outlined,
+      ),
+    );
+    
+    return _buildInfoSection(
+      'Verification Status',
+      Icons.verified_user,
+      verificationInfo,
+    );
+  }
+
+  // Build social media section
+  Widget _buildSocialMediaSection(Map<String, dynamic> teacherData) {
+    List<Widget> socialInfo = [];
+    
+    final socialFields = [
+      'linkedin',
+      'facebook',
+      'instagram',
+      'twitter',
+      'website',
+      'youtube',
+    ];
+    
+    for (String field in socialFields) {
+      if (teacherData[field] != null && teacherData[field].toString().isNotEmpty) {
+        socialInfo.add(
+          _buildInfoRow(
+            _formatFieldName(field),
+            teacherData[field].toString(),
+            _getSocialIcon(field),
+          ),
+        );
+      }
+    }
+    
+    if (socialInfo.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    return _buildInfoSection(
+      'Social Media & Links',
+      Icons.share,
+      socialInfo,
+    );
+  }
+
+  // Build preferences section
+  Widget _buildPreferencesSection(Map<String, dynamic> teacherData) {
+    List<Widget> preferenceInfo = [];
+    
+    final preferenceFields = [
+      'notificationPreferences',
+      'privacySettings',
+      'languagePreference',
+      'timezone',
+      'currency',
+    ];
+    
+    for (String field in preferenceFields) {
+      if (teacherData[field] != null && teacherData[field].toString().isNotEmpty) {
+        preferenceInfo.add(
+          _buildInfoRow(
+            _formatFieldName(field),
+            teacherData[field].toString(),
+            _getPreferenceIcon(field),
+          ),
+        );
+      }
+    }
+    
+    if (preferenceInfo.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    return _buildInfoSection(
+      'Preferences',
+      Icons.settings,
+      preferenceInfo,
+    );
+  }
+
+  // Helper to get social media icons
+  IconData _getSocialIcon(String field) {
+    switch (field) {
+      case 'linkedin':
+        return Icons.work;
+      case 'facebook':
+        return Icons.facebook;
+      case 'instagram':
+        return Icons.camera_alt;
+      case 'twitter':
+        return Icons.flutter_dash;
+      case 'website':
+        return Icons.web;
+      case 'youtube':
+        return Icons.play_circle;
+      default:
+        return Icons.link;
+    }
+  }
+
+  // Helper to get preference icons
+  IconData _getPreferenceIcon(String field) {
+    switch (field) {
+      case 'notificationPreferences':
+        return Icons.notifications;
+      case 'privacySettings':
+        return Icons.privacy_tip;
+      case 'languagePreference':
+        return Icons.language;
+      case 'timezone':
+        return Icons.access_time;
+      case 'currency':
+        return Icons.attach_money;
+      default:
+        return Icons.settings;
+    }
+  }
+
   // Helper to format field names
   String _formatFieldName(String field) {
     switch (field) {
@@ -2765,6 +3995,28 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
         return 'Qualifications';
       case 'subjects':
         return 'Subjects';
+      case 'linkedin':
+        return 'LinkedIn';
+      case 'facebook':
+        return 'Facebook';
+      case 'instagram':
+        return 'Instagram';
+      case 'twitter':
+        return 'Twitter';
+      case 'website':
+        return 'Website';
+      case 'youtube':
+        return 'YouTube';
+      case 'notificationPreferences':
+        return 'Notification Preferences';
+      case 'privacySettings':
+        return 'Privacy Settings';
+      case 'languagePreference':
+        return 'Language Preference';
+      case 'timezone':
+        return 'Timezone';
+      case 'currency':
+        return 'Currency';
       default:
         return field.replaceAll(RegExp(r'([A-Z])'), ' \$1').trim();
     }
@@ -3232,12 +4484,12 @@ class _TeachersState extends State<Teachers> with TickerProviderStateMixin {
         );
 
         // Try to save to gallery
-        final result = await GallerySaver.saveVideo(tempPath);
+        // final result = await ImageGallerySaver.saveFile(tempPath);  // Temporarily disabled
 
-        if (result == true) {
-          success = true;
-          savedPath = 'Gallery';
-        }
+        // if (result == true) {
+        //   success = true;
+        //   savedPath = 'Gallery';
+        // }
 
         // Clean up temp file
         try {
@@ -3349,11 +4601,15 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _isPlaying = false;
+  bool _isLoading = true;
+  bool _hasError = false;
+  String? _errorMessage;
+  double _downloadProgress = 0.0;
 
   @override
   void initState() {
     super.initState();
-    _initializeVideo();
+    _initializeVideoWithCache();
   }
 
   @override
@@ -3362,18 +4618,87 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
     super.dispose();
   }
 
-  void _initializeVideo() async {
+  void _initializeVideoWithCache() async {
     try {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+        _errorMessage = null;
+      });
+
+      print('🎬 Starting cached video initialization for: ${widget.videoUrl}');
+      
+      // Create a custom cache manager for videos
+      final customCacheManager = CacheManager(
+        Config(
+          'videoCache',
+          stalePeriod: const Duration(days: 7), // Cache for 7 days
+          maxNrOfCacheObjects: 50, // Keep up to 50 videos in cache
+          repo: JsonCacheInfoRepository(databaseName: 'videoCache'),
+          fileService: HttpFileService(),
+        ),
+      );
+
+      // Get cached file or download it
+      final fileInfo = await customCacheManager.getFileFromCache(widget.videoUrl);
+      File? videoFile;
+
+      if (fileInfo != null) {
+        // Video is already cached
+        videoFile = fileInfo.file;
+        print('🎬 Video found in cache: ${fileInfo.file.path}');
+      } else {
+        // Download and cache the video
+        print('🎬 Video not in cache, downloading...');
+        videoFile = await customCacheManager.getSingleFile(widget.videoUrl);
+        print('🎬 Video downloaded and cached: ${videoFile.path}');
+      }
+
+      // Initialize video player with cached file
+      _controller = VideoPlayerController.file(videoFile);
+      
+      // Add error listener
+      _controller!.addListener(() {
+        if (_controller!.value.hasError) {
+          print('🎬 Video player error: ${_controller!.value.errorDescription}');
+          if (mounted) {
+            setState(() {
+              _hasError = true;
+              _errorMessage = _controller!.value.errorDescription;
+            });
+          }
+        }
+      });
+
       await _controller!.initialize();
+      
       if (mounted) {
         setState(() {
           _isInitialized = true;
+          _isLoading = false;
         });
       }
+      
+      print('🎬 Video initialized successfully');
     } catch (e) {
       print('🎬 Video initialization error: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  void _retryVideo() {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+      _errorMessage = null;
+    });
+    _initializeVideoWithCache();
   }
 
   void _togglePlayPause() {
@@ -3412,7 +4737,73 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         borderRadius: BorderRadius.circular(8),
         child: Stack(
           children: [
-            if (_isInitialized && _controller != null)
+            // Video content or loading/error states
+            if (_hasError)
+              Container(
+                color: Colors.black,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Video Error',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _errorMessage ?? 'Unknown error',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        onPressed: _retryVideo,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_isLoading)
+              Container(
+                color: Colors.black,
+                child: const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        color: Colors.white,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'Loading video...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_isInitialized && _controller != null)
               Center(
                 child: AspectRatio(
                   aspectRatio: _controller!.value.aspectRatio,
@@ -3427,8 +4818,8 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
                 ),
               ),
 
-            // Play/Pause overlay
-            if (_isInitialized)
+            // Play/Pause overlay (only show when video is ready)
+            if (_isInitialized && !_isLoading && !_hasError)
               Positioned.fill(
                 child: GestureDetector(
                   onTap: _togglePlayPause,
@@ -3509,69 +4900,204 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  late VideoPlayerController _controller;
+  VideoPlayerController? _controller;
   bool _initialized = false;
+  bool _isLoading = true;
+  bool _hasError = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
-      ..initialize().then((_) {
-        if (mounted) {
+    _initializeVideoWithCache();
+  }
+
+  Future<void> _initializeVideoWithCache() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+        _errorMessage = null;
+      });
+
+      print('🎬 Starting full-screen cached video initialization for: ${widget.videoUrl}');
+      
+      // Create a custom cache manager for videos
+      final customCacheManager = CacheManager(
+        Config(
+          'videoCache',
+          stalePeriod: const Duration(days: 7),
+          maxNrOfCacheObjects: 50,
+          repo: JsonCacheInfoRepository(databaseName: 'videoCache'),
+          fileService: HttpFileService(),
+        ),
+      );
+
+      // Get cached file or download it
+      final fileInfo = await customCacheManager.getFileFromCache(widget.videoUrl);
+      File? videoFile;
+
+      if (fileInfo != null) {
+        // Video is already cached
+        videoFile = fileInfo.file;
+        print('🎬 Full-screen video found in cache: ${fileInfo.file.path}');
+      } else {
+        // Download and cache the video
+        print('🎬 Full-screen video not in cache, downloading...');
+        videoFile = await customCacheManager.getSingleFile(widget.videoUrl);
+        print('🎬 Full-screen video downloaded and cached: ${videoFile.path}');
+      }
+
+      // Initialize video player with cached file
+      _controller = VideoPlayerController.file(videoFile);
+      
+      // Add error listener
+      _controller!.addListener(() {
+        if (_controller!.value.hasError) {
+          print('🎬 Full-screen video player error: ${_controller!.value.errorDescription}');
+          if (mounted) {
+            setState(() {
+              _hasError = true;
+              _errorMessage = _controller!.value.errorDescription;
+            });
+          }
+        }
+      });
+
+      await _controller!.initialize();
+      
+      if (mounted) {
         setState(() {
           _initialized = true;
+          _isLoading = false;
         });
-        _controller.play();
-        }
-      }).catchError((error) {
-        print('🎬 Video player error: $error');
-      });
+        _controller!.play();
+      }
+      
+      print('🎬 Full-screen video initialized successfully');
+    } catch (e) {
+      print('🎬 Full-screen video initialization error: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _retryVideo() {
+    _controller?.dispose();
+    _initializeVideoWithCache();
   }
 
   @override
   void dispose() {
-    _controller.pause();
-    _controller.dispose();
+    _controller?.pause();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
         title: const Text('Video Player'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _retryVideo,
+          ),
+        ],
       ),
       body: Center(
-        child: _initialized
-            ? AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    VideoPlayer(_controller),
-                    VideoProgressIndicator(_controller, allowScrubbing: true),
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          if (_controller.value.isPlaying) {
-                            _controller.pause();
-                          } else {
-                            _controller.play();
-                          }
-                        });
-                      },
-                      child: Container(
-                        color: Colors.transparent,
-                        alignment: Alignment.center,
-                        child: !_controller.value.isPlaying
-                            ? const Icon(Icons.play_arrow, size: 80, color: Colors.white)
-                            : null,
-                      ),
+        child: _hasError
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.white,
+                    size: 60,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Video Error',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _errorMessage ?? 'Unknown error',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: _retryVideo,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                    ),
+                    child: const Text('Retry'),
+                  ),
+                ],
               )
-            : const CircularProgressIndicator(),
+            : _isLoading
+                ? const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: Colors.white),
+                      SizedBox(height: 16),
+                      Text(
+                        'Loading video...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  )
+                : _initialized && _controller != null
+                    ? AspectRatio(
+                        aspectRatio: _controller!.value.aspectRatio,
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            VideoPlayer(_controller!),
+                            VideoProgressIndicator(_controller!, allowScrubbing: true),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  if (_controller!.value.isPlaying) {
+                                    _controller!.pause();
+                                  } else {
+                                    _controller!.play();
+                                  }
+                                });
+                              },
+                              child: Container(
+                                color: Colors.transparent,
+                                alignment: Alignment.center,
+                                child: !_controller!.value.isPlaying
+                                    ? const Icon(Icons.play_arrow, size: 80, color: Colors.white)
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const CircularProgressIndicator(color: Colors.white),
       ),
     );
   }

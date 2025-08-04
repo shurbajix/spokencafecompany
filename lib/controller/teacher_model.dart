@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Teacher {
+   final GeoPoint ? location;
+  final String? locationName;
   final String name;
   final String email;
   final String phoneNumber;
@@ -12,6 +14,8 @@ class Teacher {
   final bool isVerified;
 
   Teacher({
+    this.location,
+    this.locationName,
     required this.name,
     required this.email,
     required this.phoneNumber,
@@ -26,6 +30,8 @@ class Teacher {
   factory Teacher.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     return Teacher(
+     location: data['location'] as GeoPoint?,
+       locationName: data['locationName']?.toString(),
       name: data['name'] ?? '',
       email: data['email'] ?? '',
       phoneNumber: data['phone'] ?? '',

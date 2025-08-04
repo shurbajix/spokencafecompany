@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../Reports/ReportsPage.dart';
+import '../Reports/DetailReportPage.dart';
 
 class TeacherandStudent extends StatefulWidget {
   const TeacherandStudent({super.key});
@@ -18,18 +22,27 @@ class _TeacherandStudentState extends State<TeacherandStudent>
   String _searchQuery = '';
   List<Map<String, dynamic>> _allTeachersData = [];
   bool _isLoading = true;
+  bool _disposed = false; // Flag to track if widget is disposed
   
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadTeachersData();
   }
 
   @override
   void dispose() {
+    _disposed = true; // Mark as disposed
     _tabController.dispose();
     super.dispose();
+  }
+
+  // Helper method to safely call setState
+  void _safeSetState(VoidCallback fn) {
+    if (mounted && !_disposed) {
+      setState(fn);
+    }
   }
 
   // Get today's date range for filtering
@@ -205,18 +218,20 @@ class _TeacherandStudentState extends State<TeacherandStudent>
 
   // Load teachers data once
   Future<void> _loadTeachersData() async {
-    setState(() {
+    if (!mounted || _disposed) return;
+    
+    _safeSetState(() {
       _isLoading = true;
     });
     
     try {
       final data = await getTeachersWithLessonData();
-      setState(() {
+      _safeSetState(() {
         _allTeachersData = data;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
+      _safeSetState(() {
         _isLoading = false;
       });
       print('Error loading teachers data: $e');
@@ -501,7 +516,7 @@ class _TeacherandStudentState extends State<TeacherandStudent>
               fillColor: Colors.grey[50],
             ),
             onChanged: (value) {
-              setState(() {
+              _safeSetState(() {
                 _searchQuery = value;
               });
             },
@@ -590,12 +605,25 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                             CircleAvatar(
                               radius: 30,
                               backgroundColor: Colors.grey[300],
-                              backgroundImage: profileImageUrl.isNotEmpty
-                                  ? NetworkImage(profileImageUrl)
-                                  : null,
-                              child: profileImageUrl.isEmpty
-                                  ? const Icon(Icons.person, color: Colors.white)
-                                  : null,
+                              child: profileImageUrl.isNotEmpty
+                                  ? ClipOval(
+                                      child: CachedNetworkImage(
+                                        imageUrl: profileImageUrl,
+                                        width: 60,
+                                        height: 60,
+                                        fit: BoxFit.cover,
+                                        placeholder: (context, url) => const CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                        errorWidget: (context, url, error) => const Icon(
+                                          Icons.person,
+                                          color: Colors.white,
+                                          size: 30,
+                                        ),
+                                      ),
+                                    )
+                                  : const Icon(Icons.person, color: Colors.white),
                             ),
                             
                             const SizedBox(width: 16),
@@ -1076,10 +1104,11 @@ class _TeacherandStudentState extends State<TeacherandStudent>
     );
   }
 
-  Widget _buildPaymentRequests() {
+    Widget _buildPaymentRequests() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
           .collection('payment_requests')
+          .where('status', isEqualTo: 'pending') // Only show pending requests
           .orderBy('requestedAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -1115,7 +1144,7 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'No Payment Requests',
+                  'No Pending Payment Requests',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -1124,7 +1153,7 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Payment requests from teachers will appear here',
+                  'All payment requests have been processed',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey,
@@ -1152,30 +1181,9 @@ class _TeacherandStudentState extends State<TeacherandStudent>
             final ibanInfo = request['ibanInfo'] as Map<String, dynamic>?;
             final notes = request['notes'] ?? '';
 
-            // Get status color
-            Color statusColor;
-            String statusText;
-            switch (status) {
-              case 'pending':
-                statusColor = Colors.orange;
-                statusText = 'Pending';
-                break;
-              case 'approved':
-                statusColor = Colors.blue;
-                statusText = 'Approved';
-                break;
-              case 'rejected':
-                statusColor = Colors.red;
-                statusText = 'Rejected';
-                break;
-              case 'paid':
-                statusColor = Colors.green;
-                statusText = 'Paid';
-                break;
-              default:
-                statusColor = Colors.grey;
-                statusText = 'Unknown';
-            }
+            // Get status color (for pending requests, always orange)
+            Color statusColor = Colors.orange;
+            String statusText = 'Pending';
 
             return Card(
               margin: const EdgeInsets.only(bottom: 16),
@@ -1404,30 +1412,89 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                     // Action buttons for pending requests
                     if (status == 'pending') ...[
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: () => _updatePaymentRequestStatus(requestId, 'approved'),
-                              child: const Text('Approve'),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.admin_panel_settings, color: Colors.blue[600], size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Admin Actions',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[700],
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: () => _updatePaymentRequestStatus(requestId, 'rejected'),
-                              child: const Text('Reject'),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green[600],
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    onPressed: () => _showApprovalDialog(requestId, teacherName, totalAmount),
+                                    icon: const Icon(Icons.check_circle, size: 20),
+                                    label: const Text(
+                                      'Approve Payment',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red[600],
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    onPressed: () => _showRejectionDialog(requestId, teacherName),
+                                    icon: const Icon(Icons.cancel, size: 20),
+                                    label: const Text(
+                                      'Reject Request',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            Text(
+                              'Click approve to process payment or reject if there are issues',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                     
@@ -1480,49 +1547,383 @@ class _TeacherandStudentState extends State<TeacherandStudent>
     );
   }
 
-  // Update payment request status
-  Future<void> _updatePaymentRequestStatus(String requestId, String newStatus) async {
+  // Update payment request status with enhanced feedback
+  Future<void> _updatePaymentRequestStatus(String requestId, String newStatus, {String? reason}) async {
     try {
-      await _firestore
-          .collection('payment_requests')
-          .doc(requestId)
-          .update({
-        'status': newStatus,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
+      // Show loading indicator
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Payment request ${newStatus} successfully'),
-            backgroundColor: newStatus == 'approved' ? Colors.green : Colors.red,
+            content: Row(
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text('Updating payment request...'),
+              ],
+            ),
+            backgroundColor: Colors.blue,
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
+
+      // Update the payment request
+      final updateData = {
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'processedBy': FirebaseAuth.instance.currentUser?.uid,
+        'processedAt': FieldValue.serverTimestamp(),
+      };
+      
+      // Add reason if provided
+      if (reason != null && reason.isNotEmpty) {
+        updateData['rejectionReason'] = reason;
+      }
+      
+      await _firestore
+          .collection('payment_requests')
+          .doc(requestId)
+          .update(updateData);
+
+      // Show success message
+      if (mounted) {
+        String message;
+        Color backgroundColor;
+        IconData icon;
+
+        switch (newStatus) {
+          case 'approved':
+            message = '✅ Payment request approved successfully!\nRequest removed from pending list.\nTeacher will be notified.';
+            backgroundColor = Colors.green;
+            icon = Icons.check_circle;
+            break;
+          case 'rejected':
+            message = '❌ Payment request rejected.\nRequest removed from pending list.\nTeacher will be notified.';
+            backgroundColor = Colors.red;
+            icon = Icons.cancel;
+            break;
+          case 'paid':
+            message = '💰 Payment marked as completed!\nRequest removed from pending list.\nMoney transferred to teacher.';
+            backgroundColor = Colors.blue;
+            icon = Icons.payment;
+            break;
+          default:
+            message = 'Payment request updated successfully';
+            backgroundColor = Colors.grey;
+            icon = Icons.info;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(icon, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(child: Text(message)),
+              ],
+            ),
+            backgroundColor: backgroundColor,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'View',
+              textColor: Colors.white,
+              onPressed: () {
+                // Refresh the payment requests list
+                setState(() {});
+              },
+            ),
+          ),
+        );
+      }
+
+      // Send notification to teacher (optional - you can implement push notifications here)
+      _sendNotificationToTeacher(requestId, newStatus);
+      
+      // Reset teacher stats when payment is approved
+      if (newStatus == 'approved') {
+        await _resetTeacherStatsAfterApproval(requestId);
+      }
+
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating payment request: $e'),
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error updating payment request: $e')),
+              ],
+            ),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
     }
   }
 
-  Widget _buildReports() {
-    return const Center(
-      child: Text(
-        'Reports Coming Soon',
-        style: TextStyle(
-          fontSize: 18,
-          color: Colors.grey,
+  // Send notification to teacher (placeholder for push notifications)
+  void _sendNotificationToTeacher(String requestId, String status) {
+    // This is where you would implement push notifications
+    // For now, we'll just log it
+    print('Notification sent to teacher for request $requestId with status $status');
+  }
+
+  // Reset teacher stats after payment approval
+  Future<void> _resetTeacherStatsAfterApproval(String requestId) async {
+    try {
+      // Get the payment request to find the teacher ID
+      final requestDoc = await _firestore
+          .collection('payment_requests')
+          .doc(requestId)
+          .get();
+      
+      if (!requestDoc.exists) {
+        print('Payment request not found: $requestId');
+        return;
+      }
+      
+      final requestData = requestDoc.data()!;
+      final teacherId = requestData['teacherId'] as String?;
+      
+      if (teacherId == null) {
+        print('Teacher ID not found in payment request');
+        return;
+      }
+      
+      print('Resetting teacher stats for: $teacherId');
+      
+      // Reset user_settings
+      await _firestore
+          .collection('user_settings')
+          .doc(teacherId)
+          .update({
+        'currentStudentCount': 0,
+        'currentTotalAmount': 0.0,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+      
+      // Reset teacher_stats
+      await _firestore
+          .collection('teacher_stats')
+          .doc(teacherId)
+          .update({
+        'studentCount': 0,
+        'totalAmount': 0.0,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+      
+      print('✅ Teacher stats reset successfully after payment approval');
+      
+    } catch (e) {
+      print('❌ Error resetting teacher stats: $e');
+    }
+  }
+
+  // Show approval confirmation dialog
+  void _showApprovalDialog(String requestId, String teacherName, double amount) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green[600], size: 28),
+            const SizedBox(width: 12),
+            Text(
+              'Approve Payment',
+              style: TextStyle(
+                color: Colors.green[700],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to approve this payment request?',
+              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Teacher: $teacherName',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Amount: ${amount.toStringAsFixed(0)} TL',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This will mark the payment as approved and notify the teacher.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[600],
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _updatePaymentRequestStatus(requestId, 'approved');
+            },
+            child: const Text('Approve Payment'),
+          ),
+        ],
       ),
     );
+  }
+
+  // Show rejection confirmation dialog
+  void _showRejectionDialog(String requestId, String teacherName) {
+    final reasonController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.cancel, color: Colors.red[600], size: 28),
+            const SizedBox(width: 12),
+            Text(
+              'Reject Request',
+              style: TextStyle(
+                color: Colors.red[700],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to reject this payment request?',
+              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red[200]!),
+              ),
+              child: Text(
+                'Teacher: $teacherName',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red[700],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Reason for rejection (optional):',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Enter reason for rejection...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.red[400]!),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[600],
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _updatePaymentRequestStatus(requestId, 'rejected', reason: reasonController.text.trim());
+            },
+            child: const Text('Reject Request'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReports() {
+    return ReportsPage();
   }
 
   @override
@@ -1565,6 +1966,10 @@ class _TeacherandStudentState extends State<TeacherandStudent>
                   icon: Icon(Icons.assignment),
                   text: 'Reports',
                 ),
+                Tab(
+                  icon: Icon(Icons.details),
+                  text: 'Detail Report',
+                ),
               ],
             ),
           ),
@@ -1575,8 +1980,9 @@ class _TeacherandStudentState extends State<TeacherandStudent>
               children: [
                 _buildTeacherDashboard(),
                 _buildAnalytics(),
-              _buildPaymentRequests(),
+                _buildPaymentRequests(),
                 _buildReports(),
+                DetailReportPage(),
               ],
             ),
           ),

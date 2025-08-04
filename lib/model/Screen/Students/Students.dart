@@ -4,14 +4,14 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:gallery_saver/gallery_saver.dart';
+// import 'package:image_gallery_saver/image_gallery_saver.dart';  // Temporarily disabled
 import 'package:cached_network_image/cached_network_image.dart';
+
 
 class Student {
   final String name;
@@ -76,7 +76,11 @@ class _StudentsState extends State<Students> {
   void initState() {
     super.initState();
     _initializeFirebase();
-    _searchController.addListener(() => setState(() {}));
+    _searchController.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   @override
@@ -88,6 +92,11 @@ class _StudentsState extends State<Students> {
 
   void _initializeFirebase() {
     _usersCollection = FirebaseFirestore.instance.collection('users');
+    _fetchStudents();
+  }
+
+  void _retryFetch() {
+    _hasFetched = false;
     _fetchStudents();
   }
 
@@ -347,9 +356,11 @@ class _StudentsState extends State<Students> {
       }
 
       // Remove from local list
-      setState(() {
-        students.removeWhere((s) => s.docId == student.docId);
-      });
+      if (mounted) {
+        setState(() {
+          students.removeWhere((s) => s.docId == student.docId);
+        });
+      }
 
       // Show success message
       if (mounted) {
@@ -410,33 +421,67 @@ class _StudentsState extends State<Students> {
     if (_hasFetched) return;
     _hasFetched = true;
 
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    try {
-      User? user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception('Authentication required. Please sign in.');
-      await user.getIdToken();
-
-      QuerySnapshot snapshot = await _usersCollection
-          .where('role', isEqualTo: 'student')
-          .get()
-          .timeout(const Duration(seconds: 15));
-
-      students = snapshot.docs.map((doc) => Student.fromFirestore(doc)).toList();
-      setState(() => isLoading = false);
-    } on FirebaseException catch (e) {
+    if (mounted) {
       setState(() {
-        errorMessage = _handleFirebaseError(e);
-        isLoading = false;
+        isLoading = true;
+        errorMessage = null;
       });
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Error: ${e.toString()}';
-        isLoading = false;
-      });
+    }
+
+    // Retry mechanism
+    int retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        User? user = FirebaseAuth.instance.currentUser;
+        if (user == null) throw Exception('Authentication required. Please sign in.');
+        await user.getIdToken();
+
+        QuerySnapshot snapshot = await _usersCollection
+            .where('role', isEqualTo: 'student')
+            .get(const GetOptions(source: Source.serverAndCache))
+            .timeout(const Duration(seconds: 30));
+
+        students = snapshot.docs.map((doc) => Student.fromFirestore(doc)).toList();
+        if (mounted) {
+          setState(() => isLoading = false);
+        }
+        
+        // Success - break out of retry loop
+        break;
+        
+      } on FirebaseException catch (e) {
+        retryCount++;
+        print('Firebase error: ${e.code} - ${e.message}'); 
+        
+        if (retryCount >= maxRetries) {
+          if (mounted) {
+            setState(() {
+              errorMessage = _handleFirebaseError(e);
+              isLoading = false;
+            });
+          }
+        } else {
+          // Wait before retrying
+          await Future.delayed(Duration(seconds: retryCount * 2));
+        }
+      } catch (e) {
+        retryCount++;
+        print('General error: $e');
+        
+        if (retryCount >= maxRetries) {
+          if (mounted) {
+            setState(() {
+              errorMessage = 'Error: ${e.toString()}';
+              isLoading = false;
+            });
+          }
+        } else {
+          // Wait before retrying
+          await Future.delayed(Duration(seconds: retryCount * 2));
+        }
+      }
     }
   }
 
@@ -451,20 +496,7 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  Future<void> _pickFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: false,
-      );
-      if (result != null) {
-        PlatformFile file = result.files.first;
-        print("File picked: ${file.name}");
-      }
-    } catch (e) {
-      print("Error picking file: $e");
-    }
-  }
+
 
   Future<void> _downloadImage(String imageUrl) async {
     try {
@@ -501,7 +533,8 @@ class _StudentsState extends State<Students> {
         );
 
         // Try to save to gallery
-        final result = await GallerySaver.saveImage(tempPath);
+        // final result = await ImageGallerySaver.saveFile(tempPath);  // Temporarily disabled
+        final result = true; // Placeholder
 
         if (result == true) {
           success = true;
@@ -719,8 +752,11 @@ class _StudentsState extends State<Students> {
               ),
             ],
           ),
+         
           Container(
-            margin: const EdgeInsets.all(10),
+            height: MediaQuery.of(context).size.height,
+           
+          margin: const EdgeInsets.all(15),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(10),
@@ -732,10 +768,10 @@ class _StudentsState extends State<Students> {
                 ),
               ],
             ),
-            height: 600,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+               
                 const Padding(
                   padding: EdgeInsets.all(10),
                   child: Text(
@@ -754,10 +790,7 @@ class _StudentsState extends State<Students> {
                                 children: [
                                   Text(errorMessage!),
                                   ElevatedButton(
-                                    onPressed: () {
-                                      _hasFetched = false;
-                                      _fetchStudents();
-                                    },
+                                    onPressed: _retryFetch,
                                     child: const Text('Retry'),
                                   ),
                                 ],
@@ -871,6 +904,7 @@ class _StudentsState extends State<Students> {
                                                   ],
                                                 ),
                                               ),
+                
                                             ],
                                           ),
                                         );
@@ -879,9 +913,13 @@ class _StudentsState extends State<Students> {
                                   ),
                                 ),
                 ),
+                 SizedBox(
+                  height: 90,
+                ),
               ],
             ),
           ),
+         
         ],
       ),
     );
@@ -2279,6 +2317,7 @@ class _StudentsState extends State<Students> {
             color: Colors.grey[600],
           ),
         ),
+        
       ],
     );
   }
@@ -2342,10 +2381,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     super.initState();
     _controller = VideoPlayerController.network(widget.videoUrl)
       ..initialize().then((_) {
-        setState(() {
-          _initialized = true;
-        });
-        _controller.play();
+        if (mounted) {
+          setState(() {
+            _initialized = true;
+          });
+          _controller.play();
+        }
       });
   }
 

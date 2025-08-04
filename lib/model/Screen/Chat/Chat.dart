@@ -55,13 +55,15 @@ class _ChatState extends State<Chat> {
   
   // Enhanced caching system for better performance
   static final Map<String, String> _userNames = {}; // Static cache for user names
+  static final Map<String, String> _userSurnames = {}; // Static cache for user surnames
+  static final Map<String, String> _userProfileImages = {}; // Static cache for profile images
   static final Map<String, DateTime> _userNamesCacheTime = {}; // Cache timestamps
-  static const Duration _userNamesCacheExpiry = Duration(minutes: 10); // 10-minute cache
+  static const Duration _userNamesCacheExpiry = Duration(minutes: 15); // 15-minute cache
   
   // Cache for user lists to reduce Firestore queries
   Map<String, List<QueryDocumentSnapshot>> _userListCache = {};
   Map<String, DateTime> _userListCacheTime = {};
-  static const Duration _userListCacheExpiry = Duration(seconds: 30); // 30-second cache
+  static const Duration _userListCacheExpiry = Duration(seconds: 60); // 60-second cache for better performance
   
   // Message pagination for better performance
   static const int _messagesPerPage = 50;
@@ -108,11 +110,13 @@ class _ChatState extends State<Chat> {
   void _clearExpiredCache() {
     final now = DateTime.now();
     
-    // Clear expired user names
+    // Clear expired user names, surnames, and profile images
     _userNamesCacheTime.removeWhere((key, time) {
       final isExpired = now.difference(time) >= _userNamesCacheExpiry;
       if (isExpired) {
         _userNames.remove(key);
+        _userSurnames.remove(key);
+        _userProfileImages.remove(key);
       }
       return isExpired;
     });
@@ -195,14 +199,21 @@ class _ChatState extends State<Chat> {
     });
   }
 
-  // Optimized user name fetching with enhanced caching
-  Future<String> _getUserName(String userId) async {
+  // Optimized user data fetching with enhanced caching (name, surname, profile image)
+  Future<Map<String, String>> _getUserData(String userId) async {
     // Check cache first with expiry
     final cacheTime = _userNamesCacheTime[userId];
     if (cacheTime != null && 
         DateTime.now().difference(cacheTime) < _userNamesCacheExpiry &&
-        _userNames.containsKey(userId)) {
-      return _userNames[userId]!;
+        _userNames.containsKey(userId) &&
+        _userSurnames.containsKey(userId) &&
+        _userProfileImages.containsKey(userId)) {
+      return {
+        'name': _userNames[userId]!,
+        'surname': _userSurnames[userId]!,
+        'profileImage': _userProfileImages[userId]!,
+        'fullName': '${_userNames[userId]} ${_userSurnames[userId]}'.trim(),
+      };
     }
 
     try {
@@ -210,35 +221,61 @@ class _ChatState extends State<Chat> {
           .collection('users')
           .doc(userId)
           .get(const GetOptions(source: Source.serverAndCache))
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 3)); // Reduced timeout for faster loading
           
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>? ?? {};
-        final name = data['name']?.toString() ?? 'Unknown User';
+        final name = data['name']?.toString() ?? '';
+        final surname = data['surname']?.toString() ?? '';
+        final profileImage = data['profileImageUrl']?.toString() ?? '';
+        final fullName = '${name} ${surname}'.trim();
         
         // Cache with timestamp
         _userNames[userId] = name;
+        _userSurnames[userId] = surname;
+        _userProfileImages[userId] = profileImage;
         _userNamesCacheTime[userId] = DateTime.now();
         
-        return name;
+        return {
+          'name': name,
+          'surname': surname,
+          'profileImage': profileImage,
+          'fullName': fullName.isEmpty ? 'Unknown User' : fullName,
+        };
       }
     } catch (e) {
-      print('Error fetching user name for $userId: $e');
+      print('Error fetching user data for $userId: $e');
     }
     
     // Cache unknown user to avoid repeated queries
-    _userNames[userId] = 'Unknown User';
+    _userNames[userId] = 'Unknown';
+    _userSurnames[userId] = 'User';
+    _userProfileImages[userId] = '';
     _userNamesCacheTime[userId] = DateTime.now();
-    return 'Unknown User';
+    
+    return {
+      'name': 'Unknown',
+      'surname': 'User',
+      'profileImage': '',
+      'fullName': 'Unknown User',
+    };
   }
 
-  // Batch fetch user names for better performance
-  Future<void> _batchFetchUserNames(List<String> userIds) async {
+  // Backward compatibility method
+  Future<String> _getUserName(String userId) async {
+    final userData = await _getUserData(userId);
+    return userData['fullName']!;
+  }
+
+  // Batch fetch user data for better performance (names, surnames, profile images)
+  Future<void> _batchFetchUserData(List<String> userIds) async {
     final uncachedIds = userIds.where((id) {
       final cacheTime = _userNamesCacheTime[id];
       return cacheTime == null || 
              DateTime.now().difference(cacheTime) >= _userNamesCacheExpiry ||
-             !_userNames.containsKey(id);
+             !_userNames.containsKey(id) ||
+             !_userSurnames.containsKey(id) ||
+             !_userProfileImages.containsKey(id);
     }).toList();
 
     if (uncachedIds.isEmpty) return;
@@ -252,26 +289,33 @@ class _ChatState extends State<Chat> {
             .collection('users')
             .where(FieldPath.documentId, whereIn: chunk)
             .get(const GetOptions(source: Source.serverAndCache))
-            .timeout(const Duration(seconds: 5));
+            .timeout(const Duration(seconds: 3)); // Reduced timeout
 
         final now = DateTime.now();
         for (final doc in docs.docs) {
           final data = doc.data();
-          final name = data['name']?.toString() ?? 'Unknown User';
+          final name = data['name']?.toString() ?? '';
+          final surname = data['surname']?.toString() ?? '';
+          final profileImage = data['profileImageUrl']?.toString() ?? '';
+          
           _userNames[doc.id] = name;
+          _userSurnames[doc.id] = surname;
+          _userProfileImages[doc.id] = profileImage;
           _userNamesCacheTime[doc.id] = now;
         }
 
         // Cache missing users as unknown
         for (final id in chunk) {
           if (!_userNames.containsKey(id)) {
-            _userNames[id] = 'Unknown User';
+            _userNames[id] = 'Unknown';
+            _userSurnames[id] = 'User';
+            _userProfileImages[id] = '';
             _userNamesCacheTime[id] = now;
           }
         }
       }
     } catch (e) {
-      print('Error batch fetching user names: $e');
+      print('Error batch fetching user data: $e');
     }
   }
 
@@ -316,9 +360,9 @@ class _ChatState extends State<Chat> {
       _userListCache[userType] = snapshot.docs;
       _userListCacheTime[userType] = now;
       
-      // Batch fetch user names for all users
+      // Batch fetch user data for all users
       final userIds = snapshot.docs.map((doc) => doc.id).toList();
-      _batchFetchUserNames(userIds);
+      _batchFetchUserData(userIds);
       
       print('✅ Cached ${snapshot.docs.length} $userType users');
       return snapshot.docs;
@@ -402,92 +446,103 @@ class _ChatState extends State<Chat> {
                       final userInfo = sortedUsers[i];
                       final userId = userInfo['id'];
                       final userData = userInfo['data'] as Map<String, dynamic>;
-                      final userName = userData['name']?.toString() ?? 'Unknown User';
                       final isSelected = _selectedUserId == userId && selectedChat == userType;
 
-                      return StreamBuilder<QuerySnapshot>(
-                        stream: _firestore
-                            .collection('${userType}Chats')
-                            .doc(userId)
-                            .collection('messages')
-                            .orderBy('timestamp', descending: true)
-                            .limit(1)
-                            .snapshots()
-                            .distinct(), // Avoid duplicate emissions
-                        builder: (msgCtx, msgSnap) {
-                          String lastMessage = 'No messages yet';
-                          String timeLabel = '';
-                          String? lastMessageUserId;
-                          bool isUnread = false;
+                      return FutureBuilder<Map<String, String>>(
+                        future: _getUserData(userId),
+                        builder: (userCtx, userSnap) {
+                          final userInfo = userSnap.data ?? {
+                            'name': 'Unknown',
+                            'surname': 'User',
+                            'profileImage': '',
+                            'fullName': 'Unknown User',
+                          };
+                          final userName = userInfo['fullName']!;
+                          final profileImage = userInfo['profileImage']!;
+                          
+                          return StreamBuilder<QuerySnapshot>(
+                            stream: _firestore
+                                .collection('${userType}Chats')
+                                .doc(userId)
+                                .collection('messages')
+                                .orderBy('timestamp', descending: true)
+                                .limit(1)
+                                .snapshots()
+                                .distinct(), // Avoid duplicate emissions
+                            builder: (msgCtx, msgSnap) {
+                              String lastMessage = 'No messages yet';
+                              String timeLabel = '';
+                              String? lastMessageUserId;
+                              bool isUnread = false;
 
-                          if (msgSnap.hasData && msgSnap.data!.docs.isNotEmpty) {
-                            final msgData = msgSnap.data!.docs.first.data() as Map<String, dynamic>;
-                            lastMessage = msgData['content'] ?? lastMessage;
-                            final ts = msgData['timestamp'] as Timestamp?;
-                            lastMessageUserId = msgData['userId'];
-                            
-                            if (ts != null) {
-                              timeLabel = DateFormat('HH:mm').format(ts.toDate());
-                            }
+                              if (msgSnap.hasData && msgSnap.data!.docs.isNotEmpty) {
+                                final msgData = msgSnap.data!.docs.first.data() as Map<String, dynamic>;
+                                lastMessage = msgData['content'] ?? lastMessage;
+                                final ts = msgData['timestamp'] as Timestamp?;
+                                lastMessageUserId = msgData['userId'];
+                                
+                                if (ts != null) {
+                                  timeLabel = DateFormat('HH:mm').format(ts.toDate());
+                                }
 
-                            // Check if this is an unread message (not from current user)
-                            if (lastMessageUserId != _currentUser!.uid) {
-                              isUnread = _unreadMessages[userId] != false; // Default to true if not explicitly marked as read
-                            }
-                          }
+                                // Check if this is an unread message (not from current user)
+                                if (lastMessageUserId != _currentUser!.uid) {
+                                  isUnread = _unreadMessages[userId] != false; // Default to true if not explicitly marked as read
+                                }
+                              }
 
-                          // Filter by search query - check both user name and last message
-                          if (_searchQuery.isNotEmpty) {
-                            final nameMatches = userName.toLowerCase().contains(_searchQuery);
-                            final messageMatches = lastMessage.toLowerCase().contains(_searchQuery);
-                            if (!nameMatches && !messageMatches) {
-                              return const SizedBox.shrink();
-                            }
-                          }
+                              // Filter by search query - check both user name and last message
+                              if (_searchQuery.isNotEmpty) {
+                                final nameMatches = userName.toLowerCase().contains(_searchQuery);
+                                final messageMatches = lastMessage.toLowerCase().contains(_searchQuery);
+                                if (!nameMatches && !messageMatches) {
+                                  return const SizedBox.shrink();
+                                }
+                              }
 
-                          // Highlight search terms in user name and last message
-                          Widget userNameWidget;
-                          Widget lastMessageWidget;
+                              // Highlight search terms in user name and last message
+                              Widget userNameWidget;
+                              Widget lastMessageWidget;
 
-                          if (_searchQuery.isNotEmpty && userName.toLowerCase().contains(_searchQuery)) {
-                            final lowerName = userName.toLowerCase();
-                            final searchIndex = lowerName.indexOf(_searchQuery);
-                            final beforeSearch = userName.substring(0, searchIndex);
-                            final searchTerm = userName.substring(searchIndex, searchIndex + _searchQuery.length);
-                            final afterSearch = userName.substring(searchIndex + _searchQuery.length);
-                            
-                            userNameWidget = RichText(
-                              text: TextSpan(
-                                style: TextStyle(
-                                  fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
-                                  fontSize: 14,
-                                  color: isUnread ? Colors.black : Colors.black87,
-                                ),
-                                children: [
-                                  TextSpan(text: beforeSearch),
-                                  TextSpan(
-                                    text: searchTerm,
+                              if (_searchQuery.isNotEmpty && userName.toLowerCase().contains(_searchQuery)) {
+                                final lowerName = userName.toLowerCase();
+                                final searchIndex = lowerName.indexOf(_searchQuery);
+                                final beforeSearch = userName.substring(0, searchIndex);
+                                final searchTerm = userName.substring(searchIndex, searchIndex + _searchQuery.length);
+                                final afterSearch = userName.substring(searchIndex + _searchQuery.length);
+                                
+                                userNameWidget = RichText(
+                                  text: TextSpan(
                                     style: TextStyle(
-                                      backgroundColor: Colors.yellow,
                                       fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
                                       fontSize: 14,
                                       color: isUnread ? Colors.black : Colors.black87,
                                     ),
+                                    children: [
+                                      TextSpan(text: beforeSearch),
+                                      TextSpan(
+                                        text: searchTerm,
+                                        style: TextStyle(
+                                          backgroundColor: Colors.yellow,
+                                          fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
+                                          fontSize: 14,
+                                          color: isUnread ? Colors.black : Colors.black87,
+                                        ),
+                                      ),
+                                      TextSpan(text: afterSearch),
+                                    ],
                                   ),
-                                  TextSpan(text: afterSearch),
-                                ],
-                              ),
-                            );
-                          } else {
-                            userNameWidget = Text(
-                              userName,
-                              style: TextStyle(
-                                fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
-                                fontSize: 14,
-                                color: isUnread ? Colors.black : Colors.black87,
-                              ),
-                            );
-                          }
+                                );
+                              } else {
+                                userNameWidget = Text(
+                                  userName,
+                                  style: TextStyle(
+                                    fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
+                                    fontSize: 14,
+                                    color: isUnread ? Colors.black : Colors.black87,
+                                  ),
+                                );
+                              }
 
                           if (_searchQuery.isNotEmpty && lastMessage.toLowerCase().contains(_searchQuery)) {
                             final lowerMessage = lastMessage.toLowerCase();
@@ -541,12 +596,17 @@ class _ChatState extends State<Chat> {
                               leading: Stack(
                                 children: [
                                   CircleAvatar(
-                                    backgroundColor:
-                                        userType == 'student' ? studentColor : teacherColor,
-                                    child: Text(
-                                      userName[0].toUpperCase(),
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
+                                    radius: 25,
+                                    backgroundColor: userType == 'student' ? studentColor : teacherColor,
+                                    backgroundImage: profileImage.isNotEmpty 
+                                        ? NetworkImage(profileImage) as ImageProvider
+                                        : null,
+                                    child: profileImage.isEmpty 
+                                        ? Text(
+                                            userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                          )
+                                        : null,
                                   ),
                                   if (isUnread)
                                     Positioned(
@@ -602,6 +662,8 @@ class _ChatState extends State<Chat> {
                   );
                 },
               );
+            },
+                            );
             },
           ),
         ),

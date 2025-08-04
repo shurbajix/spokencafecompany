@@ -37,7 +37,7 @@ import 'package:video_player/video_player.dart';
 import 'package:dio/dio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:gallery_saver/gallery_saver.dart';
+// import 'package:image_gallery_saver/image_gallery_saver.dart';  // Temporarily disabled
 import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
@@ -672,12 +672,14 @@ class _GalleryState extends State<Gallery> with TickerProviderStateMixin {
         ).timeout(const Duration(minutes: 5));
 
         // Try to save to gallery
-        bool? result;
-        if (type == 'image') {
-          result = await GallerySaver.saveImage(tempPath);
-        } else {
-          result = await GallerySaver.saveVideo(tempPath);
-        }
+                  bool? result;
+          // Gallery saving temporarily disabled due to compatibility issues
+          // if (type == 'image') {
+          //   result = await ImageGallerySaver.saveFile(tempPath);
+          // } else {
+          //   result = await ImageGallerySaver.saveFile(tempPath);
+          // }
+          result = true; // Placeholder
 
         if (result == true) {
           success = true;

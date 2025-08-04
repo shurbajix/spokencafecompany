@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class StudentInfo extends StatefulWidget {
   const StudentInfo({super.key});
@@ -25,10 +26,12 @@ class _StudentInfoState extends State<StudentInfo> {
 
   Future<void> _fetchStudentsInfo() async {
     try {
-      setState(() {
-        isLoading = true;
-        errorMessage = null;
-      });
+      if (mounted) {
+        setState(() {
+          isLoading = true;
+          errorMessage = null;
+        });
+      }
 
       print('🔄 Fetching students info with billing data...');
 
@@ -193,10 +196,12 @@ class _StudentInfoState extends State<StudentInfo> {
         return nameA.compareTo(nameB);
       });
 
-      setState(() {
-        studentsInfo = combinedData;
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          studentsInfo = combinedData;
+          isLoading = false;
+        });
+      }
 
       print('✅ Successfully fetched ${studentsInfo.length} users');
       print('💰 Users with billing info: ${combinedData.where((s) => s['hasBillingInfo']).length}');
@@ -204,10 +209,12 @@ class _StudentInfoState extends State<StudentInfo> {
     } catch (e) {
       print('❌ Error fetching students info: $e');
       print('❌ Error details: ${e.toString()}');
-      setState(() {
-        errorMessage = 'Error loading students information: $e';
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          errorMessage = 'Error loading students information: $e';
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -652,16 +659,29 @@ class _StudentInfoState extends State<StudentInfo> {
                 CircleAvatar(
                   radius: 30,
                   backgroundColor: const Color(0xff1B1212),
-                  backgroundImage: student['profileImageUrl']?.isNotEmpty == true
-                      ? NetworkImage(student['profileImageUrl'])
-                      : null,
-                  child: student['profileImageUrl']?.isEmpty != false
-                      ? const Icon(
+                  child: student['profileImageUrl']?.isNotEmpty == true
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: student['profileImageUrl']!,
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                            errorWidget: (context, url, error) => const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 30,
+                            ),
+                          ),
+                        )
+                      : const Icon(
                           Icons.person,
                           color: Colors.white,
                           size: 30,
-                        )
-                      : null,
+                        ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
